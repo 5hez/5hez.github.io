@@ -4,15 +4,15 @@ self.__precacheManifest = [
     "url": "/games/pixi-Tetris/robots.txt"
   },
   {
-    "revision": "0767c5edf69727a721a1",
-    "url": "/games/pixi-Tetris/js/chunk-vendors.577aa911.js"
+    "revision": "bc72ca8b3550ddc722fe",
+    "url": "/games/pixi-Tetris/js/chunk-vendors.a4242aaf.js"
   },
   {
-    "revision": "7fa3d90782bdde3ec2f4",
-    "url": "/games/pixi-Tetris/js/app.2d0ee807.js"
+    "revision": "f692fcebf21e78c169ec",
+    "url": "/games/pixi-Tetris/js/app.43c4805b.js"
   },
   {
-    "revision": "e3a081cbdda3643457f5b8f74fe5d4b2",
+    "revision": "b81abdcc128077a59c3f305a3fa2c66f",
     "url": "/games/pixi-Tetris/index.html"
   },
   {
@@ -28,7 +28,7 @@ self.__precacheManifest = [
     "url": "/games/pixi-Tetris/game-img/2048/number.json"
   },
   {
-    "revision": "7fa3d90782bdde3ec2f4",
+    "revision": "f692fcebf21e78c169ec",
     "url": "/games/pixi-Tetris/css/app.e6e3dded.css"
   }
 ];

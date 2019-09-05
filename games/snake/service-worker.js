@@ -14,7 +14,7 @@
 importScripts("https://storage.googleapis.com/workbox-cdn/releases/3.6.3/workbox-sw.js");
 
 importScripts(
-  "/games/pixi-Tetris/precache-manifest.6a6c2bd06f98d8254347a2c786ff63ac.js"
+  "/games/snake/precache-manifest.f33fcdb13b5dde3a9925f24ed76601d7.js"
 );
 
 workbox.core.setCacheNameDetails({prefix: "games"});
