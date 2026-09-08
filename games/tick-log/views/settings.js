@@ -5,8 +5,8 @@ import {
   queryEvents, clearAllEvents, renameEventName, countByName, importEvents, importButtons,
   getSyncConfig, saveSyncConfig, renameNode
 } from '../utils/db.js';
-import { downloadCSV, downloadJSON, downloadButtonsJSON } from '../utils/exporter.js';
-import { parseJSONRecords, parseCSVRecords, parseButtonsJSON } from '../utils/import.js';
+import { downloadCSV, downloadJSON, downloadButtonsJSON, downloadBackupJSON } from '../utils/exporter.js';
+import { parseJSONRecords, parseCSVRecords, parseButtonsJSON, parseBackupJSON } from '../utils/import.js';
 import { fetchRemoteFile, pushRemoteFile, buildSyncPayload } from '../utils/sync.js';
 import { esc, toast, confirmbox, promptbox } from '../utils/ui.js';
 
@@ -82,6 +82,12 @@ export function render(container) {
         <div class="btn-group">
           <div class="block-btn" id="export-buttons">导出快捷按钮</div>
           <div class="block-btn" id="import-buttons">导入快捷按钮</div>
+        </div>
+        <div class="split-line"></div>
+        <div class="security-row"><span class="form-label">全部数据（记录 + 快捷按钮）</span></div>
+        <div class="btn-group">
+          <div class="block-btn" id="export-all">导出全部数据</div>
+          <div class="block-btn" id="import-all">导入全部数据</div>
         </div>
         <input type="file" id="import-file" class="hidden" accept=".json,.csv">
         <div class="block-btn block-danger" id="clear-all">清空全部数据</div>
@@ -280,13 +286,21 @@ export function render(container) {
     downloadButtonsJSON(btns, 'tick-log-buttons.json');
     toast('已导出快捷按钮');
   });
+  container.querySelector('#export-all').addEventListener('click', () => {
+    const records = queryEvents({});
+    const btns = getButtons();
+    if (!records.length && !btns.length) return toast('暂无数据');
+    downloadBackupJSON(records, btns, 'tick-log-all.json');
+    toast('已导出全部数据');
+  });
 
-  // —— 导入（JSON / CSV / 快捷按钮） ——
+  // —— 导入（JSON / CSV / 快捷按钮 / 全部数据） ——
   const fileEl = container.querySelector('#import-file');
   const triggerImport = (type) => { fileEl.dataset.type = type; fileEl.click(); };
   container.querySelector('#import-json').addEventListener('click', () => triggerImport('json'));
   container.querySelector('#import-csv').addEventListener('click', () => triggerImport('csv'));
   container.querySelector('#import-buttons').addEventListener('click', () => triggerImport('buttons'));
+  container.querySelector('#import-all').addEventListener('click', () => triggerImport('all'));
   fileEl.addEventListener('change', async () => {
     const f = fileEl.files && fileEl.files[0];
     const type = fileEl.dataset.type || 'json';
@@ -297,6 +311,37 @@ export function render(container) {
       text = await f.text();
     } catch (err) {
       toast('文件读取失败');
+      return;
+    }
+
+    // 全部数据导入（记录 + 快捷按钮）
+    if (type === 'all') {
+      let parsed;
+      try {
+        parsed = parseBackupJSON(text);
+      } catch (err) {
+        toast('备份文件解析失败');
+        return;
+      }
+      const { events, buttons } = parsed;
+      if (!events.length && !buttons.length) { toast('未识别到有效数据'); return; }
+      const ok = await confirmbox({
+        title: '导入全部数据',
+        message: `将导入 ${events.length} 条记录、${buttons.length} 个快捷按钮（合并去重，重复自动跳过）。`,
+        confirmText: '开始导入'
+      });
+      if (!ok) return;
+      let summary = '';
+      if (events.length) {
+        const r = importEvents(events);
+        summary += `记录 ${r.added} 条${r.skipped ? `，跳过重复 ${r.skipped}` : ''}`;
+      }
+      if (buttons.length) {
+        const r = importButtons(buttons);
+        summary += (summary ? '；' : '') + `按钮 新增 ${r.added} 个${r.updated ? `，更新 ${r.updated} 个` : ''}`;
+      }
+      toast('导入完成：' + summary);
+      render(container);
       return;
     }
 
@@ -322,7 +367,7 @@ export function render(container) {
       return;
     }
 
-    // 记录导入
+    // 记录导入（JSON / CSV）
     let records;
     try {
       records = type === 'json' ? parseJSONRecords(text) : parseCSVRecords(text);

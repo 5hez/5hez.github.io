@@ -1,5 +1,7 @@
 'use strict';
 
+import { toBackupJSON } from './exporter.js';
+
 // GitHub 数据同步：通过 Contents API 上传/下载统一的数据包文件。
 // 仅需一个对目标仓库拥有 contents 读写权限的 Personal Access Token。
 // 注意：Token 保存在浏览器 localStorage（本机），请使用权限收敛的 token，勿写入共享环境。
@@ -77,11 +79,5 @@ export async function pushRemoteFile({ token, repo, path, message, content }) {
 
 /** 组装云端数据包（复用本地导出结构）。 */
 export function buildSyncPayload(events, buttons) {
-  return JSON.stringify({
-    app: 'tick-log',
-    version: 1,
-    exportedAt: Date.now(),
-    events,
-    buttons
-  });
+  return toBackupJSON(events, buttons);
 }

@@ -23,6 +23,17 @@ export function toJSON(records) {
   return JSON.stringify(records, null, 2);
 }
 
+export function toButtonsJSON(buttons) {
+  return JSON.stringify({ buttons }, null, 2);
+}
+
+/**
+ * 统一备份格式（与 GitHub 云同步同一结构）：记录 + 快捷按钮合并为一个文件。
+ */
+export function toBackupJSON(events, buttons) {
+  return JSON.stringify({ app: 'tick-log', version: 1, exportedAt: Date.now(), events, buttons });
+}
+
 /**
  * 触发浏览器下载导出（Blob + a[download]）。
  */
@@ -45,10 +56,10 @@ export function downloadJSON(records, filename) {
   download(new Blob([toJSON(records)], { type: 'application/json' }), filename || 'tick-log.json');
 }
 
-export function toButtonsJSON(buttons) {
-  return JSON.stringify({ buttons }, null, 2);
-}
-
 export function downloadButtonsJSON(buttons, filename) {
   download(new Blob([toButtonsJSON(buttons)], { type: 'application/json' }), filename || 'tick-log-buttons.json');
+}
+
+export function downloadBackupJSON(events, buttons, filename) {
+  download(new Blob([toBackupJSON(events, buttons)], { type: 'application/json' }), filename || 'tick-log-all.json');
 }

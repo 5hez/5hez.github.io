@@ -113,3 +113,11 @@ export function parseButtonsJSON(text) {
     })
     .filter(Boolean);
 }
+
+/** 解析统一备份：{ events, buttons }，复用记录/按钮各自的解析逻辑。 */
+export function parseBackupJSON(text) {
+  return {
+    events: parseJSONRecords(text),
+    buttons: parseButtonsJSON(text)
+  };
+}
