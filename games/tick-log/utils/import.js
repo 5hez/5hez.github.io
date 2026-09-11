@@ -11,7 +11,7 @@ export function parseJSONRecords(text) {
       const name = String(e.name || '').trim();
       const ts = normalizeTs(e.ts);
       if (!name || ts == null) return null;
-      return { id: e.id || null, name, color: e.color || '#4ECDC4', ts };
+      return { id: e.id || null, name, color: e.color || '#4cb6ac', ts };
     })
     .filter(Boolean);
 }
@@ -38,7 +38,7 @@ export function parseCSVRecords(text) {
       const name = String(nameCell == null ? '' : nameCell).trim();
       const ts = normalizeTs(tsCell);
       if (!name || ts == null) return null;
-      return { id: null, name, color: '#4ECDC4', ts };
+      return { id: null, name, color: '#4cb6ac', ts };
     })
     .filter(Boolean);
 }
@@ -105,7 +105,7 @@ export function parseButtonsJSON(text) {
         id: b.id || null,
         name,
         icon: b.icon || '·',
-        color: b.color || '#4ECDC4',
+        color: b.color || '#4cb6ac',
         enabled: b.enabled !== false,
         sort: typeof b.sort === 'number' ? b.sort : 0,
         nodes: Array.isArray(b.nodes) && b.nodes.length >= 2 ? b.nodes.slice() : []

@@ -24,7 +24,7 @@ function render() {
   const container = document.getElementById('view');
   container.scrollTop = 0;
   ROUTES[route].render(container);
-  container.querySelectorAll('.tab').forEach((t) => {
+  document.querySelectorAll('.tab').forEach((t) => {
     t.classList.toggle('active', t.dataset.tab === route);
   });
 }

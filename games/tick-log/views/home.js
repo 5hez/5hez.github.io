@@ -1,19 +1,31 @@
 'use strict';
 
 import { getButtons, saveButtons, appendEvent, queryEvents, removeEvent, renameEventName, getEventNodes, recordNode, getOpenSession, abortOpenSession } from '../utils/db.js';
-import { formatFull, formatGapText } from '../utils/time.js';
+import { formatFull, formatGapText, formatHM } from '../utils/time.js';
+import { startOfDay } from '../core/stats.js';
 import { esc, toast, confirmbox, promptbox, actionSheet, nodeDialog, onLongPress, wasLongPress } from '../utils/ui.js';
+import { iconSvg } from '../utils/icons.js';
+
+let editing = false;
 
 export function render(container) {
   const buttons = getButtons().filter((b) => b.enabled);
-  const entries = queryEvents({}).slice(0, 30);
+  const allEvents = queryEvents({});
+  const totalCount = allEvents.length;
+  const entries = allEvents.slice(0, 5);
+  const hasMore = totalCount > entries.length;
 
   container.innerHTML = `
     <div class="page">
-      <div class="grid">
+      <div class="grid-toolbar">
+        <span class="grid-tip">${editing ? '拖动排序 · 点 × 删除' : '长按按钮可编辑'}</span>
+        <button class="edit-toggle" id="edit-toggle">${editing ? '完成' : '编辑'}</button>
+      </div>
+      <div class="grid ${editing ? 'editing' : ''}">
         ${buttons.map((b) => `
           <div class="cell" data-id="${b.id}" style="background:${b.color}">
-            <span class="cell-icon">${b.icon}</span>
+            ${editing ? `<button class="cell-del" data-del="${b.id}" aria-label="删除">×</button>` : ''}
+            <span class="cell-icon">${iconSvg(b.icon)}</span>
             <span class="cell-name">${esc(b.name)}</span>
           </div>`).join('')}
         <div class="cell cell-add" data-act="add">
@@ -22,7 +34,19 @@ export function render(container) {
         </div>
       </div>
 
-      <h2 class="section-title">最近记录</h2>
+      <div class="card today-card" id="today-summary">
+        <span class="today-ico">☀️</span>
+        <span class="today-body">
+          <span class="today-title">今日统计</span>
+          <span class="today-sub" id="today-count">已记录 0 件小事</span>
+        </span>
+        <button class="today-link" id="today-detail">查看详情</button>
+      </div>
+
+      <h2 class="section-title section-title-row">
+        <span>最近记录</span>
+        <span class="section-meta" id="recent-count">显示 ${entries.length} 条</span>
+      </h2>
       ${entries.length ? `
         <div class="list">
           ${entries.map((e) => `
@@ -30,16 +54,53 @@ export function render(container) {
               <span class="dot" style="background:${e.color}"></span>
               <span class="row-name">${esc(e.name)}</span>
               <span class="row-time">${formatFull(e.ts)}</span>
-              <button class="row-del" data-id="${e.id}">删除</button>
+              <button class="row-del row-del-icon" data-id="${e.id}" aria-label="删除">🗑</button>
             </div>`).join('')}
-        </div>` : '<div class="empty-tip">暂无记录 · 点击上方按钮即可 1 秒记一件</div>'}
+        </div>
+        ${hasMore ? `<a class="recent-more" href="#/history">查看全部 ${totalCount} 条 ›</a>` : ''}`
+      : '<div class="empty-tip">暂无记录 · 点击上方按钮即可 1 秒记一件</div>'}
+      <button class="fab" id="fab-add" aria-label="补录">＋</button>
     </div>`;
+
+  const todayTs = startOfDay(Date.now());
+  const todayCount = queryEvents({}).filter((e) => e.ts >= todayTs).length;
+  const todayEl = container.querySelector('#today-count');
+  if (todayEl) todayEl.textContent = '已记录 ' + todayCount + ' 件小事';
+  container.querySelector('#today-detail').addEventListener('click', () => { location.hash = '#/stats'; });
+  container.querySelector('#fab-add').addEventListener('click', async () => {
+    const r = await backfillOne();
+    if (r) {
+      toast('已补录：' + r.name);
+      render(container);
+    }
+  });
+
+  // 编辑模式切换
+  container.querySelector('#edit-toggle').addEventListener('click', () => {
+    editing = !editing;
+    render(container);
+  });
+  // 编辑模式：删除 + 拖拽排序
+  if (editing) {
+    container.querySelectorAll('.cell-del').forEach((btn) => btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const ok = await confirmbox({ title: '隐藏按钮', message: '将从首页隐藏该按钮（不删除记录），可在设置里重新显示。', confirmText: '隐藏' });
+      if (ok) {
+        const list = getButtons();
+        const b = list.find((x) => x.id === btn.dataset.del);
+        if (b) { b.enabled = false; saveButtons(list); }
+        render(container);
+      }
+    }));
+    enableDrag(container);
+  }
 
   // 点击记录
   container.querySelector('.grid').addEventListener('click', async (e) => {
     const cell = e.target.closest('.cell');
     if (!cell) return;
     if (cell.dataset.act === 'add') { location.hash = '#/settings'; return; }
+    if (editing) return;
     if (wasLongPress(cell)) return;
     const btn = getButtons().find((b) => b.id === cell.dataset.id && b.enabled);
     if (!btn) return;
@@ -54,8 +115,8 @@ export function render(container) {
     await handleNodeRecord(container, btn, nodes);
   });
 
-  // 长按按钮 -> 编辑/删除
-  container.querySelectorAll('.cell[data-id]').forEach((cell) => {
+  // 长按按钮 -> 编辑/删除（仅非编辑模式）
+  if (!editing) container.querySelectorAll('.cell[data-id]').forEach((cell) => {
     onLongPress(cell, async () => {
       const btn = getButtons().find((b) => b.id === cell.dataset.id);
       if (!btn) return;
@@ -113,6 +174,50 @@ const act = await actionSheet(['编辑名称', '补录一笔', '删除按钮']);
       }
     });
   });
+}
+
+function enableDrag(container) {
+  const grid = container.querySelector('.grid');
+  let dragEl = null;
+
+  grid.querySelectorAll('.cell[data-id]').forEach((cell) => {
+    cell.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.cell-del')) return;
+      dragEl = cell;
+      cell.classList.add('dragging');
+      try { cell.setPointerCapture(e.pointerId); } catch {}
+      e.preventDefault();
+    });
+
+    cell.addEventListener('pointermove', (e) => {
+      if (dragEl !== cell) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.cell[data-id]');
+      if (over && over !== cell) {
+        const rect = over.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        grid.insertBefore(cell, after ? over.nextElementSibling : over);
+      }
+    });
+
+    const end = (e) => {
+      if (dragEl !== cell) return;
+      dragEl = null;
+      cell.classList.remove('dragging');
+      try { cell.releasePointerCapture(e.pointerId); } catch {}
+      persistOrder(grid);
+    };
+    cell.addEventListener('pointerup', end);
+    cell.addEventListener('pointercancel', end);
+  });
+}
+
+function persistOrder(grid) {
+  const ids = [...grid.querySelectorAll('.cell[data-id]')].map((c) => c.dataset.id);
+  const all = getButtons();
+  const enabled = all.filter((b) => b.enabled);
+  enabled.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  const disabled = all.filter((b) => !b.enabled);
+  saveButtons([...enabled, ...disabled]);
 }
 
 /**
@@ -236,7 +341,7 @@ export async function backfillOne({ defaultName } = {}) {
         const node = nodes ? $('#bf-node').value : null;
         if (nodes) {
           // 过程事件：补录节点（校验先开始后结束）
-          const r = recordNode({ name, color: (btn && btn.color) || '#4ECDC4', node, ts: t.getTime() });
+          const r = recordNode({ name, color: (btn && btn.color) || '#4cb6ac', node, ts: t.getTime() });
           if (r.status === 'noOpen') {
             toast('请先补录开始节点「' + nodes[0] + '」');
             return;
@@ -250,7 +355,7 @@ export async function backfillOne({ defaultName } = {}) {
             return;
           }
         } else {
-          appendEvent({ name, color: (btn && btn.color) || '#4ECDC4', ts: t.getTime() });
+          appendEvent({ name, color: (btn && btn.color) || '#4cb6ac', ts: t.getTime() });
         }
         overlay.remove();
         resolve({ name, node, ts: t.getTime() });

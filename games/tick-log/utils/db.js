@@ -43,16 +43,37 @@ export function saveMeta(meta) {
 // ---------------- buttons ----------------
 
 const DEFAULT_BUTTONS = [
-  { id: 'btn1', name: '上厕所', icon: '💧', color: '#4ECDC4', enabled: true, sort: 0 },
-  { id: 'btn2', name: '咳嗽', icon: '😷', color: '#FF6B6B', enabled: true, sort: 1 },
-  { id: 'btn3', name: '喝水', icon: '🥤', color: '#4D96FF', enabled: true, sort: 2 },
-  { id: 'btn4', name: '吃药', icon: '💊', color: '#F9C74F', enabled: true, sort: 3 }
+  { id: 'btn1', name: '上厕所', icon: 'toilet', color: '#4cb6ac', enabled: true, sort: 0 },
+  { id: 'btn2', name: '咳嗽', icon: 'stethoscope', color: '#FF6B6B', enabled: true, sort: 1 },
+  { id: 'btn3', name: '喝水', icon: 'glass-water', color: '#4D96FF', enabled: true, sort: 2 },
+  { id: 'btn4', name: '吃药', icon: 'pill', color: '#F9C74F', enabled: true, sort: 3 }
 ];
+
+// 旧默认按钮：按名称 + 旧 emoji 精确升级到语义正确的 lucide 图标
+const DEFAULT_ICON_UPGRADE = {
+  '上厕所': { from: '💧', to: 'toilet' },
+  '咳嗽': { from: '😷', to: 'stethoscope' },
+  '喝水': { from: '🥤', to: 'glass-water' },
+  '吃药': { from: '💊', to: 'pill' }
+};
+// 其余旧 emoji -> lucide（通用映射）
+const EMOJI_ICON = {
+  '🚽': 'toilet', '🍚': 'utensils', '🏃': 'activity', '🚶': 'footprints',
+  '😴': 'moon', '🚿': 'shower-head', '💓': 'heart-pulse', '🌡️': 'thermometer',
+  '😤': 'face-angry', '🌙': 'moon', '☀️': 'sun', '⏰': 'clock', '💧': 'droplet'
+};
+
+function migrateButtonIcon(b) {
+  const up = DEFAULT_ICON_UPGRADE[b.name];
+  if (up && b.icon === up.from) b.icon = up.to;
+  else if (EMOJI_ICON[b.icon]) b.icon = EMOJI_ICON[b.icon];
+  return b;
+}
 
 export function getButtons() {
   const b = get(BUTTONS_KEY, null);
   if (b && b.length) {
-    return b.slice().sort((x, y) => x.sort - y.sort);
+    return b.slice().sort((x, y) => x.sort - y.sort).map(migrateButtonIcon);
   }
   return DEFAULT_BUTTONS.slice();
 }
@@ -161,7 +182,7 @@ export function importEvents(list) {
     const rec = {
       id,
       name: String(e.name),
-      color: e.color || '#4ECDC4',
+      color: e.color || '#4cb6ac',
       ts: e.ts,
       node: e.node || null,
       sessionId: e.sessionId || null
@@ -215,7 +236,13 @@ export function importButtons(list) {
       added++;
     }
   });
-  const merged = Array.from(byName.values()).map((b, i) => { b.sort = i; return b; });
+  // 按导入的 sort 恢复顺序：导入项按其 sort 排，未导入的本地项保持原相对顺序追加
+  const sortOf = new Map((list || []).map((b) => [b.name, typeof b.sort === 'number' ? b.sort : 0]));
+  const imported = [];
+  const rest = [];
+  byName.forEach((b) => (sortOf.has(b.name) ? imported : rest).push(b));
+  imported.sort((a, b) => sortOf.get(a.name) - sortOf.get(b.name));
+  const merged = imported.concat(rest).map((b, i) => { b.sort = i; return b; });
   if (!merged.some((b) => b.enabled)) merged[0].enabled = true;
   saveButtons(merged);
   return { added, updated };

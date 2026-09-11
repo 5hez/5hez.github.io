@@ -55,7 +55,7 @@ export function drawBarChart(ctx, opts) {
 
   const stackSeries = stacked
     ? series
-    : [{ color: color || '#4ECDC4', counts: counts || [] }];
+    : [{ color: color || '#4cb6ac', counts: counts || [] }];
 
   for (let i = 0; i < n; i++) {
     const x = PAD_L + i * colW + (colW - barW) / 2;

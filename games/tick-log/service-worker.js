@@ -5,7 +5,7 @@
 // - 静态资源（图标）：CacheFirst —— 优先速度与离线，install 时预缓存。
 // 注意：Service Worker 仅在 HTTPS 或 localhost 环境下生效。
 
-const CACHE = 'tick-log-v3';
+const CACHE = 'tick-log-v4';
 
 const ASSETS = [
   './',
@@ -21,6 +21,7 @@ const ASSETS = [
   './utils/time.js',
   './utils/canvasChart.js',
   './utils/exporter.js',
+  './utils/icons.js',
   './utils/import.js',
   './utils/ui.js',
   './utils/sync.js',
@@ -52,12 +53,12 @@ self.addEventListener('activate', (e) => {
 });
 
 function isImpl(url) {
-  return url.pathname.endsWith('/') || /\.(js|css|json|webmanifest)$/.test(url.pathname);
+  return url.pathname.endsWith('/') || /\.(js|css|json|webmanifest|html)$/.test(url.pathname);
 }
 
 async function networkFirst(req) {
   try {
-    const resp = await fetch(req);
+    const resp = await fetch(req, { cache: 'no-store' });
     if (resp && resp.ok) {
       const copy = resp.clone();
       const cache = await caches.open(CACHE);

@@ -46,7 +46,7 @@ function periodLabel(range, offset) {
 
 export function render(container) {
   viewEl = container;
-  const buttons = getButtons().filter((b) => b.enabled);
+  const buttons = getButtons();
   const state = { active: getActive(buttons), range: getRange(), offset: curOffset };
   // 「全部」汇总在第一位，默认选中，一眼看到所有记录
   const chips = [{ name: ALL, label: '全部', color: '#9aa0a6', dark: '#2b2b2b' }]
@@ -55,13 +55,15 @@ export function render(container) {
   const showModeSwitch = state.active !== ALL && !!getEventNodes(state.active);
 
   container.innerHTML = `
-    <div class="page">
+      <div class="page">
+      <h2 class="section-title filter-title" id="filter-title">▽ 分类筛选</h2>
       <div class="chips">${chips.map((c) => {
     const on = c.name === state.active;
-    const color = on ? (c.dark || c.color) : '#666';
-    const border = c.color && c.name !== ALL ? c.color : '#c5c8cb';
+    const style = on
+      ? 'background:var(--primary);border-color:var(--primary);color:#fff'
+      : `border-color:${c.color && c.name !== ALL ? c.color : '#c5c8cb'};color:${c.color && c.name !== ALL ? c.color : '#666'}`;
     return `<button class="chip ${on ? 'on' : ''}" data-name="${esc(c.name)}"
-      style="border-color:${border};color:${color}">${esc(c.label)}</button>`;
+      style="${style}">${esc(c.label)}</button>`;
   }).join('')}</div>
       <div class="seg">${Object.entries(RANGES).map(([k, label]) => `
         <button class="seg-item ${k === state.range ? 'on' : ''}" data-range="${k}">${label}</button>`).join('')}
@@ -72,11 +74,12 @@ export function render(container) {
         <button class="seg-item ${curChartMode === 'duration' ? 'on' : ''}" data-cmode="duration">时长</button>
       </div>` : ''}
       <div class="period-nav">
-        <button class="pn-btn" id="period-prev" aria-label="上一${RANGES[state.range]}">◀</button>
+        <button class="pn-btn" id="period-prev" aria-label="上一${RANGES[state.range]}">‹</button>
         <span class="period-label" id="period-label"></span>
-        <button class="pn-btn" id="period-next" aria-label="下一${RANGES[state.range]}">▶</button>
+        <button class="pn-btn" id="period-next" aria-label="下一${RANGES[state.range]}">›</button>
       </div>
       <div id="stats-body"></div>
+      <p class="privacy-note" id="stats-foot-note">数据仅保存在本地浏览器，建议定期通过 GitHub 同步备份</p>
     </div>`;
 
   container.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => {
@@ -152,8 +155,8 @@ function drawStats(container, state) {
   // 总次数 = 所选周期内的次数（r.counts 已按周期桶聚合）
   const total = r.counts.reduce((a, b) => a + b, 0);
   const daily = total ? (total / r.totalDays).toFixed(1) : '0';
-  const chip = getButtons().filter((b) => b.enabled).find((b) => b.name === state.active);
-  const singleColor = isAll ? '#2b2b2b' : (chip && chip.color) || '#4ECDC4';
+  const chip = getButtons().find((b) => b.name === state.active);
+  const singleColor = isAll ? '#2b2b2b' : (chip && chip.color) || '#4cb6ac';
   const tickEvery = state.range === 'week' ? 1 : state.range === 'month' ? 5 : 3;
 
   if (!total) {
@@ -202,12 +205,14 @@ function drawStats(container, state) {
 
   body.innerHTML = `
     <div class="cards">
-      <div class="card"><b class="num">${total}</b><span class="lbl">总次数</span></div>
-      <div class="card"><b class="num">${daily}</b><span class="lbl">日均</span></div>
-      <div class="card"><b class="num num-sm">${last ? last.text : '-'}</b><span class="lbl">最近一次</span></div>
-      <div class="card"><b class="num num-sm">${avg ? avg.text : '-'}</b><span class="lbl">平均间隔</span></div>
+      <div class="card card-metric"><span class="card-tag">累计</span><b class="num">${total}</b><span class="lbl">总次数</span></div>
+      <div class="card card-metric"><span class="card-tag">频次</span><b class="num">${daily}</b><span class="lbl">日均</span></div>
+      <div class="card card-metric"><span class="card-tag">动态</span><b class="num num-sm">${last ? last.text : '-'}</b><span class="lbl">最近一次</span></div>
+      <div class="card card-metric"><span class="card-tag">趋势</span><b class="num num-sm">${avg ? avg.text : '-'}</b><span class="lbl">平均间隔</span></div>
     </div>
     <div class="card chart-card">
+      <h3 class="chart-title" id="chart-title">事件趋势分布</h3>
+      <p class="chart-lead">点击柱子查看当日明细${isAll ? '（全部事件）' : ''}</p>
       ${legendHtml}
       <canvas id="chart" class="chart" style="height:320px"></canvas>
       <div class="chart-tip">点击柱子查看当日明细${isAll ? '（全部事件）' : ''}</div>
@@ -221,7 +226,7 @@ function drawStats(container, state) {
 /** 由按钮配色查事件颜色（含已隐藏按钮），未知事件用默认色。 */
 function colorOf(name) {
   const b = getButtons().find((x) => x.name === name);
-  return (b && b.color) || '#4ECDC4';
+  return (b && b.color) || '#4cb6ac';
 }
 
 /** 过程事件"时长"视图：会话持续时间折线图 + 会话指标。 */

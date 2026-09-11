@@ -9,20 +9,14 @@ import { downloadCSV, downloadJSON, downloadButtonsJSON, downloadBackupJSON } fr
 import { parseJSONRecords, parseCSVRecords, parseButtonsJSON, parseBackupJSON } from '../utils/import.js';
 import { fetchRemoteFile, pushRemoteFile, buildSyncPayload } from '../utils/sync.js';
 import { esc, toast, confirmbox, promptbox } from '../utils/ui.js';
+import { iconSvg, ICON_LIST } from '../utils/icons.js';
 
 const COLORS = [
-  '#4ECDC4', '#FF6B6B', '#4D96FF', '#F9C74F', '#9B5DE5', '#00BBF9',
+  '#4cb6ac', '#FF6B6B', '#4D96FF', '#F9C74F', '#9B5DE5', '#00BBF9',
   '#F3722C', '#F9844A', '#90BE6D', '#43AA8B', '#577590', '#277DA1',
   '#E07A5F', '#8AC926', '#6A4C93', '#FF5D8F', '#2D9CDB', '#EB5757',
   '#F2C94C', '#9B51E0', '#2F80ED', '#27AE60', '#F2994A', '#C71585',
   '#20B2AA', '#FF8C00', '#556B2F', '#8B4513', '#708090', '#5F6368'
-];
-
-const ICONS = [
-  '💧', '🚽', '😷', '🥤', '💊', '🍚',
-  '🏃', '🚶', '😴', '🚿', '💓', '🌡️',
-  '🤕', '😵', '🦷', '🤢', '💩', '😤',
-  '🌙', '☀️', '⏰', '🧴', '🫁', '🐶'
 ];
 
 export function render(container) {
@@ -37,14 +31,14 @@ export function render(container) {
         <p class="card-sub">点图标改样子 · 点色块改颜色 · 点名称改名 · 点「节点」配置过程事件（如 吵架→和好）· 点状态显示/隐藏</p>
         ${buttons.map((b) => `
           <div class="btn-row" data-id="${b.id}">
-            <button class="btn-icon" data-icon="${b.id}">${esc(b.icon)}</button>
+            <button class="btn-icon" data-icon="${b.id}">${iconSvg(b.icon)}</button>
             <button class="swatch" data-color="${b.id}" style="background:${b.color}"></button>
             <button class="btn-name ${b.enabled ? '' : 'btn-off'}" data-edit="${b.id}">${esc(b.name)}</button>
             <button class="btn-node ${Array.isArray(b.nodes) && b.nodes.length >= 2 ? 'btn-node-on' : ''}" data-nodes="${b.id}">${Array.isArray(b.nodes) && b.nodes.length >= 2 ? '过程' : '节点'}</button>
             <button class="btn-state" data-toggle="${b.id}">${b.enabled ? '显示中' : '已隐藏'}</button>
             <button class="btn-del" data-del="${b.id}">删除</button>
           </div>`).join('')}
-        <div class="block-btn" id="add-btn">＋ 新增快捷按钮</div>
+        <div class="block-btn block-outline" id="add-btn">＋ 新增快捷按钮</div>
       </div>
 
       <div class="card">
@@ -67,8 +61,8 @@ export function render(container) {
       </div>
 
       <div class="card">
-        <h3 class="card-title">数据</h3>
-        <div class="security-row"><span class="form-label">记录</span></div>
+        <h3 class="card-title">数据管理</h3>
+        <div class="security-row"><span class="form-label">记录导出 / 导入</span></div>
         <div class="btn-group">
           <div class="block-btn" id="export-csv">导出 CSV</div>
           <div class="block-btn" id="export-json">导出 JSON</div>
@@ -78,7 +72,7 @@ export function render(container) {
           <div class="block-btn" id="import-csv">导入 CSV</div>
         </div>
         <div class="split-line"></div>
-        <div class="security-row"><span class="form-label">快捷按钮</span></div>
+        <div class="security-row"><span class="form-label">快捷按钮备份</span></div>
         <div class="btn-group">
           <div class="block-btn" id="export-buttons">导出快捷按钮</div>
           <div class="block-btn" id="import-buttons">导入快捷按钮</div>
@@ -96,18 +90,29 @@ export function render(container) {
       <div class="card">
         <h3 class="card-title">云同步（GitHub）</h3>
         <p class="card-sub">把「记录 + 快捷按钮」备份到自己的 GitHub 仓库，换设备时下载即恢复。请求 GitHub 使用本机 Token，仅保存在本机浏览器，请用只开该仓库读写权限的 Token。</p>
-        <label class="setting-row"><span class="setting-label">访问令牌</span>
-          <input type="password" id="gh-token" class="time-input sync-input" value="${esc(gh.token)}" placeholder="ghp_…"></label>
-        <label class="setting-row"><span class="setting-label">仓库</span>
+        <div class="sync-field">
+          <div class="sync-label-row">
+            <span class="setting-label">访问令牌 (TOKEN)</span>
+            <span class="token-badge" id="token-encrypted">ENCRYPTED</span>
+          </div>
+          <input type="password" id="gh-token" class="time-input sync-input" value="${esc(gh.token)}" placeholder="ghp_…">
+        </div>
+        <label class="setting-row"><span class="setting-label">仓库 (REPOSITORY)</span>
           <input type="text" id="gh-repo" class="time-input sync-input" value="${esc(gh.repo)}" placeholder="用户名/仓库名"></label>
-        <label class="setting-row"><span class="setting-label">文件路径</span>
+        <label class="setting-row"><span class="setting-label">文件路径 (FILE PATH)</span>
           <input type="text" id="gh-path" class="time-input sync-input" value="${esc(gh.path)}" placeholder="tick-log/data.json"></label>
-        <div class="block-btn" id="gh-save">保存同步配置</div>
+        <div class="block-btn block-outline" id="gh-save">保存同步配置</div>
         <div class="btn-group">
           <div class="block-btn" id="gh-upload">↑ 上传同步</div>
           <div class="block-btn" id="gh-download">↓ 下载同步</div>
         </div>
+        <div class="block-btn block-primary" id="gh-save-sync">保存并同步</div>
         <p class="security-row" id="gh-info">下载的数据会通过“导入”能力合并到本地（重复自动跳过）。</p>
+      </div>
+
+      <div class="version-info">
+        <p id="app-version">快记小事 v1.2.4</p>
+        <p class="version-tag" id="app-tagline">Designed for mindful logging</p>
       </div>
 
       <div class="privacy-note">所有数据仅保存在本机（localStorage + Service Worker 离线缓存），不上传任何服务器。</div>
@@ -235,10 +240,11 @@ export function render(container) {
       if (next === null) return; // 取消新增
       nodes = next;
     }
+    const icon = (await pickIcon(null)) || 'sparkles';
     list.push({
       id: 'btn' + Date.now().toString(36),
       name,
-      icon: '·',
+      icon,
       color: COLORS[list.length % COLORS.length],
       enabled: true,
       sort: list.length,
@@ -415,6 +421,26 @@ export function render(container) {
     });
     toast('同步配置已保存');
   });
+  // 保存并同步：先保存当前表单配置，再立即上传一次
+  container.querySelector('#gh-save-sync').addEventListener('click', async () => {
+    saveSyncConfig({
+      token: container.querySelector('#gh-token').value.trim(),
+      repo: container.querySelector('#gh-repo').value.trim(),
+      path: container.querySelector('#gh-path').value.trim() || 'tick-log/data.json'
+    });
+    const cfg = getSyncConfig();
+    if (!cfg.token || !cfg.repo) { toast('请先填写并保存 TOKEN 与仓库'); return; }
+    setBusy('gh-save-sync', true);
+    try {
+      const payload = buildSyncPayload(queryEvents({}), getButtons());
+      await pushRemoteFile({ ...cfg, message: 'tick-log 保存并同步', content: payload });
+      toast('已保存并同步到 GitHub');
+    } catch (err) {
+      toast('同步失败：' + err.message);
+    } finally {
+      setBusy('gh-save-sync', false);
+    }
+  });
   container.querySelector('#gh-upload').addEventListener('click', async () => {
     const cfg = getSyncConfig();
     if (!cfg.token || !cfg.repo) { toast('请先填写并保存同步配置'); return; }
@@ -500,8 +526,10 @@ function pickIcon(current) {
     overlay.innerHTML = `
       <div class="modal">
         <div class="modal-title">选择图标</div>
-        <div class="icon-palette">${ICONS.map((ic) => `
-          <button class="icon-sel" data-icon="${ic}">${ic}</button>`).join('')}</div>
+        <div class="icon-palette">${ICON_LIST.map(([name, label]) => `
+          <button class="icon-sel ${name === current ? 'on' : ''}" data-icon="${name}" title="${label}">
+            ${iconSvg(name)}<span class="icon-label">${label}</span>
+          </button>`).join('')}</div>
         <div class="modal-btns">
           <button class="modal-btn" data-custom="1">自定义图标</button>
           <button class="modal-btn" data-close="1">取消</button>
