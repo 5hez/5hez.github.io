@@ -499,7 +499,7 @@ export function render(container) {
       let summary = '';
       if (Array.isArray(data.events) && data.events.length) {
         const r = importEvents(data.events);
-        summary += `记录 ${r.added} 条${r.skipped ? `，跳过重复 ${r.skipped}` : ''}`;
+        summary += `记录 新增 ${r.added} 条${r.updated ? `，更新 ${r.updated} 条` : ''}${r.skipped ? `，跳过 ${r.skipped}` : ''}`;
       }
       if (Array.isArray(data.buttons) && data.buttons.length) {
         const r = importButtons(data.buttons);

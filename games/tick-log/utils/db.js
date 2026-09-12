@@ -171,25 +171,39 @@ function eventSig(e) {
 }
 
 /**
- * 批量导入记录（去重合并）：按 id 或内容签名判重，已存在则跳过。
- * 记录按年份分片写入，写入前与各年已有记录合并并按时间倒序。
- * 返回 { added, skipped }。
+ * 批量导入记录（合并协调）：
+ * - 同 id 已存在：协调改名/改色（把合并/改名传播到本机），内容相同则跳过。
+ * - 无 id 或 id 不同但内容签名相同：跳过（"完全一样"判重）。
+ * - 其余为新增。
+ * 返回 { added, updated, skipped }。
  */
 export function importEvents(list) {
-  const existing = queryEvents({});
-  const seenIds = new Set(existing.map((e) => e.id));
-  const seenSigs = new Set(existing.map(eventSig));
-  const perYear = new Map();
+  const all = queryEvents({});
+  const byId = new Map(all.map((e) => [e.id, e]));
+  const sigs = new Set(all.map(eventSig));
   let added = 0;
+  let updated = 0;
   let skipped = 0;
 
   (list || []).forEach((e) => {
     if (!e || typeof e.ts !== 'number' || !e.name) { skipped++; return; }
     const id = e.id || uid();
+    const existing = byId.get(id);
+    if (existing) {
+      // 同 id：协调改名/改色（合并传播），内容相同则跳过
+      if (existing.name !== String(e.name) || (e.color && existing.color !== e.color)) {
+        sigs.delete(eventSig(existing));
+        existing.name = String(e.name);
+        if (e.color) existing.color = e.color;
+        sigs.add(eventSig(existing));
+        updated++;
+      } else {
+        skipped++;
+      }
+      return;
+    }
     const sig = eventSig(e);
-    if (seenIds.has(id) || seenSigs.has(sig)) { skipped++; return; }
-    seenIds.add(id);
-    seenSigs.add(sig);
+    if (sigs.has(sig)) { skipped++; return; }
     const rec = {
       id,
       name: String(e.name),
@@ -198,21 +212,25 @@ export function importEvents(list) {
       node: e.node || null,
       sessionId: e.sessionId || null
     };
-    const key = evtKey(rec.ts);
-    if (!perYear.has(key)) perYear.set(key, []);
-    perYear.get(key).push(rec);
+    all.push(rec);
+    byId.set(id, rec);
+    sigs.add(sig);
     added++;
   });
 
-  perYear.forEach((imports, key) => {
-    const cur = get(key, []);
-    const byId = new Map(cur.map((x) => [x.id, x]));
-    imports.forEach((r) => { if (!byId.has(r.id)) byId.set(r.id, r); });
-    const merged = Array.from(byId.values()).sort((a, b) => b.ts - a.ts);
-    set(key, merged);
+  // 重新分片写回（含改名协调）
+  const perYear = new Map();
+  all.forEach((rec) => {
+    const key = evtKey(rec.ts);
+    if (!perYear.has(key)) perYear.set(key, []);
+    perYear.get(key).push(rec);
+  });
+  perYear.forEach((arr, key) => {
+    arr.sort((a, b) => b.ts - a.ts);
+    set(key, arr);
   });
 
-  return { added, skipped };
+  return { added, updated, skipped };
 }
 
 /**
