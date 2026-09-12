@@ -1083,3 +1083,4 @@ button {
   padding: 0;
 }
 .cell.dragging { opacity: 0.6; transform: scale(0.98); }
+.group-open { color: var(--primary); }

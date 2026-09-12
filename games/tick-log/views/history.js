@@ -22,32 +22,37 @@ export function render(container) {
     rows.get(date).push(html);
   };
 
-  // —— 过程事件：按会话展示（开始日期为分组锚点） ——
+  // —— 过程事件：按会话展示；进行中的置顶 ——
+  const openRows = []; // 进行中的过程事件（置顶展示）
+  const sessionRow = (btn, s, color) => {
+    const d0 = new Date(s.start);
+    const d1 = s.end ? new Date(s.end) : null;
+    const rangeTxt = d1
+      ? `${d0.getFullYear()}年${d0.getMonth() + 1}月${d0.getDate()}日 ${formatHM(s.start)} — ${d1.getFullYear()}年${d1.getMonth() + 1}月${d1.getDate()}日 ${formatHM(s.end)}`
+      : `${formatFull(s.start)} — 进行中`;
+    const durTxt = s.durationMs != null ? `持续${formatGapText(s.durationMs)}` : '进行中';
+    return `
+      <div class="row session-row" data-sid="${esc(s.sessionId)}">
+        <div class="session-head">
+          <span class="dot" style="background:${color}"></span>
+          <span class="row-name">${esc(btn.name)}</span>
+          <span class="session-badge">周期</span>
+          <span class="row-time">${formatHM(s.start)}</span>
+          <span class="session-dur">${durTxt}</span>
+          <button class="row-del" data-sid="${esc(s.sessionId)}">删除</button>
+          <span class="row-arrow">›</span>
+        </div>
+        <div class="session-detail">${rangeTxt}</div>
+      </div>`;
+  };
   buttons
     .filter((b) => Array.isArray(b.nodes) && b.nodes.length >= 2)
     .forEach((btn) => {
+      const color = btn.color || '#4cb6ac';
       querySessions(btn.name).forEach((s) => {
         if (!s.start) return;
-        const color = btn.color || '#4cb6ac';
-        const d0 = new Date(s.start);
-        const d1 = s.end ? new Date(s.end) : null;
-        const rangeTxt = d1
-          ? `${d0.getFullYear()}年${d0.getMonth() + 1}月${d0.getDate()}日 ${formatHM(s.start)} — ${d1.getFullYear()}年${d1.getMonth() + 1}月${d1.getDate()}日 ${formatHM(s.end)}`
-          : `${formatFull(s.start)} — 进行中`;
-        const durTxt = s.durationMs != null ? `持续${formatGapText(s.durationMs)}` : '进行中';
-        push(s.start, `
-          <div class="row session-row" data-sid="${esc(s.sessionId)}">
-            <div class="session-head">
-              <span class="dot" style="background:${color}"></span>
-              <span class="row-name">${esc(btn.name)}</span>
-              <span class="session-badge">周期</span>
-              <span class="row-time">${formatHM(s.start)}</span>
-              <span class="session-dur">${durTxt}</span>
-              <button class="row-del" data-sid="${esc(s.sessionId)}">删除</button>
-              <span class="row-arrow">›</span>
-            </div>
-            <div class="session-detail">${rangeTxt}</div>
-          </div>`);
+        if (!s.end) openRows.push(sessionRow(btn, s, color));
+        else push(s.start, sessionRow(btn, s, color));
       });
     });
 
@@ -64,15 +69,20 @@ export function render(container) {
   });
 
   const groups = [];
-  let total = 0;
+  let total = openRows.length;
   // 按锚点时间戳降序（设计稿：最新的一天在最上面）
   [...rows.keys()].sort((a, b) => anchors.get(b) - anchors.get(a)).forEach((date) => {
     total += rows.get(date).length;
     groups.push(`<h3 class="group-date">📅 ${date}</h3>${rows.get(date).join('')}`);
   });
 
+  const openSection = openRows.length
+    ? `<h3 class="group-date group-open">⏳ 进行中</h3>${openRows.join('')}`
+    : '';
+
   container.innerHTML = `<div class="page">
     <div class="block-btn block-outline" id="backfill-btn">＋ 补录一条记录</div>
+    ${openSection}
     ${groups.join('')}
     ${total ? `<p class="history-summary">共 ${total} 条记录</p>` : '<div class="empty-tip">还没有记录</div>'}
   </div>`;

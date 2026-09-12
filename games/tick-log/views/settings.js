@@ -8,7 +8,7 @@ import {
 import { downloadCSV, downloadJSON, downloadButtonsJSON, downloadBackupJSON } from '../utils/exporter.js';
 import { parseJSONRecords, parseCSVRecords, parseButtonsJSON, parseBackupJSON } from '../utils/import.js';
 import { fetchRemoteFile, pushRemoteFile, buildSyncPayload } from '../utils/sync.js';
-import { esc, toast, confirmbox, promptbox } from '../utils/ui.js';
+import { esc, toast, confirmbox, promptbox, actionSheet } from '../utils/ui.js';
 import { iconSvg, ICON_LIST } from '../utils/icons.js';
 
 const COLORS = [
@@ -39,6 +39,7 @@ export function render(container) {
             <button class="btn-del" data-del="${b.id}">删除</button>
           </div>`).join('')}
         <div class="block-btn block-outline" id="add-btn">＋ 新增快捷按钮</div>
+        <div class="block-btn block-outline" id="merge-btn">⇄ 合并事件</div>
       </div>
 
       <div class="card">
@@ -252,6 +253,30 @@ export function render(container) {
     });
     saveButtons(list);
     toast(nodes.length >= 2 ? `已添加，过程：${nodes[0]} → ${nodes[1]}` : (n ? `已添加，关联 ${n} 条记录` : '已添加'));
+    render(container);
+  });
+
+  // —— 合并事件（同类型：事件↔事件 / 过程↔过程；两按钮均保留） ——
+  container.querySelector('#merge-btn').addEventListener('click', async () => {
+    const list = getButtons();
+    if (list.length < 2) { toast('至少需要两个事件才能合并'); return; }
+    const isProcess = (b) => Array.isArray(b.nodes) && b.nodes.length >= 2;
+    const keepName = await actionSheet(list.map((b) => b.name));
+    if (!keepName) return;
+    const keepBtn = list.find((b) => b.name === keepName);
+    const candidates = list.filter((b) => b.name !== keepName && isProcess(b) === isProcess(keepBtn));
+    if (!candidates.length) { toast('没有同类型的事件可合并'); return; }
+    const mergeName = await actionSheet(candidates.map((b) => b.name));
+    if (!mergeName) return;
+    const n = countByName(mergeName);
+    const ok = await confirmbox({
+      title: '合并事件',
+      message: `将「${mergeName}」的 ${n} 条记录合并到「${keepName}」下（两个按钮都保留）。`,
+      confirmText: '合并'
+    });
+    if (!ok) return;
+    const moved = renameEventName(mergeName, keepName, keepBtn.color);
+    toast(`已合并 ${moved} 条记录到「${keepName}」`);
     render(container);
   });
 

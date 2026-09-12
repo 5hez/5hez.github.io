@@ -164,12 +164,21 @@ export function countByName(name) {
 }
 
 /**
- * 批量导入记录（去重合并）：按 id 判重，已存在则跳过。
+ * 记录内容签名：用于「完全一样」判重（name + ts + node + sessionId）。
+ */
+function eventSig(e) {
+  return String(e.name) + '|' + e.ts + '|' + (e.node || '') + '|' + (e.sessionId || '');
+}
+
+/**
+ * 批量导入记录（去重合并）：按 id 或内容签名判重，已存在则跳过。
  * 记录按年份分片写入，写入前与各年已有记录合并并按时间倒序。
  * 返回 { added, skipped }。
  */
 export function importEvents(list) {
-  const existingIds = new Set(queryEvents({}).map((e) => e.id));
+  const existing = queryEvents({});
+  const seenIds = new Set(existing.map((e) => e.id));
+  const seenSigs = new Set(existing.map(eventSig));
   const perYear = new Map();
   let added = 0;
   let skipped = 0;
@@ -177,8 +186,10 @@ export function importEvents(list) {
   (list || []).forEach((e) => {
     if (!e || typeof e.ts !== 'number' || !e.name) { skipped++; return; }
     const id = e.id || uid();
-    if (existingIds.has(id)) { skipped++; return; }
-    existingIds.add(id);
+    const sig = eventSig(e);
+    if (seenIds.has(id) || seenSigs.has(sig)) { skipped++; return; }
+    seenIds.add(id);
+    seenSigs.add(sig);
     const rec = {
       id,
       name: String(e.name),
@@ -386,10 +397,33 @@ export function removeSession(sessionId) {
 
 // ---------------- migrate ----------------
 
+/**
+ * 清理历史重复记录：按内容签名去重（保留第一条），返回移除条数。
+ */
+function dedupEvents() {
+  let removed = 0;
+  listYearKeys().forEach((key) => {
+    const arr = get(key, []);
+    const seen = new Set();
+    const next = [];
+    arr.forEach((e) => {
+      const sig = eventSig(e);
+      if (seen.has(sig)) { removed++; return; }
+      seen.add(sig);
+      next.push(e);
+    });
+    if (next.length !== arr.length) set(key, next);
+  });
+  return removed;
+}
+
 export function migrate() {
   const meta = getMeta();
-  // 预留版本升级钩子：按 meta.version 逐级迁移
   let ver = meta.version || 1;
-  if (ver < 1) { /* 未来迁移逻辑写这里 */ }
-  saveMeta({ version: 1 });
+  // v2：清理历史重复记录（按内容签名去重）
+  if (ver < 2) {
+    dedupEvents();
+    ver = 2;
+  }
+  saveMeta({ version: ver });
 }
