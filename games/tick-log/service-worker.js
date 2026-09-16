@@ -1,11 +1,11 @@
 'use strict';
 
-// 快记小事 Service Worker：
-// - 实现性资源（首页 / JS / CSS / manifest）：NetworkFirst —— 在线时始终取最新（解决改代码刷不出新版），离线回退缓存。
-// - 静态资源（图标）：CacheFirst —— 优先速度与离线，install 时预缓存。
+// 快记小事 Service Worker —— 离线优先：
+// - 所有资源 CacheFirst：优先用缓存（秒开 + 完全离线可用），版本升级走 version.json 手动提示。
+// - version.json 始终走网络（版本检测）。
 // 注意：Service Worker 仅在 HTTPS 或 localhost 环境下生效。
 
-const CACHE = 'tick-log-v4';
+const CACHE = 'tick-log-v5';
 
 const ASSETS = [
   './',
@@ -52,26 +52,6 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-function isImpl(url) {
-  return url.pathname.endsWith('/') || /\.(js|css|json|webmanifest|html)$/.test(url.pathname);
-}
-
-async function networkFirst(req) {
-  try {
-    const resp = await fetch(req, { cache: 'no-store' });
-    if (resp && resp.ok) {
-      const copy = resp.clone();
-      const cache = await caches.open(CACHE);
-      await cache.put(req, copy);
-    }
-    return resp;
-  } catch (err) {
-    const hit = await caches.match(req);
-    if (hit) return hit;
-    return new Response('offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
-  }
-}
-
 async function cacheFirst(req) {
   const hit = await caches.match(req);
   if (hit) return hit;
@@ -89,6 +69,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-
-  e.respondWith(isImpl(url) ? networkFirst(req) : cacheFirst(req));
+  // 版本检测文件始终走网络
+  if (url.pathname.endsWith('/version.json')) return;
+  e.respondWith(cacheFirst(req));
 });
