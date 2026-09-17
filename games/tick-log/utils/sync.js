@@ -81,3 +81,10 @@ export async function pushRemoteFile({ token, repo, path, message, content }) {
 export function buildSyncPayload(events, buttons) {
   return toBackupJSON(events, buttons);
 }
+
+/** 记录"本机已知的云端数据版本时间"：下载后传 exportedAt，上传后不传（=当前时间）。 */
+export function markSynced(exportedAt) {
+  try {
+    localStorage.setItem('sync_exported_at', String(exportedAt == null ? Date.now() : exportedAt));
+  } catch (e) {}
+}
