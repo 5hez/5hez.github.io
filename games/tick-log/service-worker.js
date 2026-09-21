@@ -5,7 +5,7 @@
 // - version.json 始终走网络（版本检测）。
 // 注意：Service Worker 仅在 HTTPS 或 localhost 环境下生效。
 
-const CACHE = 'tick-log-v5';
+const CACHE = 'tick-log-v6';
 
 const ASSETS = [
   './',
@@ -43,13 +43,18 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
+  e.waitUntil((async () => {
+    await caches.keys()
       .then((keys) => Promise.all(
         keys.filter((k) => k.startsWith('tick-log-') && k !== CACHE).map((k) => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())
-  );
+      ));
+    await self.clients.claim();
+    // 激活后刷新已打开的页面，确保拿到新代码（解决"缓存了坏版本导致白屏"，不动 localStorage）
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const c of clients) {
+      if (c.navigate) c.navigate(c.url).catch(() => {});
+    }
+  })());
 });
 
 async function cacheFirst(req) {
