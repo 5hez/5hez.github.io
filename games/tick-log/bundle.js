@@ -274,9 +274,9 @@ module.exports = { toMin, localClockMin, isNightly, beautify, formatGap, avgInte
 __define('core/session.js', function (module, exports, require) {
 
 
-var __m97113 = require('./stats.js');
-var computeRange = __m97113.computeRange;
-var startOfDay = __m97113.startOfDay;
+var __m57734 = require('./stats.js');
+var computeRange = __m57734.computeRange;
+var startOfDay = __m57734.startOfDay;
 
 /**
  * 过程事件（节点化）会话逻辑：纯函数，无存储依赖。
@@ -435,15 +435,15 @@ module.exports = { get, set, remove, keys, estimateBytes };
 __define('utils/db.js', function (module, exports, require) {
 
 
-var __m822 = require('./storage.js');
-var get = __m822.get;
-var set = __m822.set;
-var remove = __m822.remove;
-var keys = __m822.keys;
-var estimateBytes = __m822.estimateBytes;
-var __m65357 = require('../core/session.js');
-var findOpenSession = __m65357.findOpenSession;
-var sessionize = __m65357.sessionize;
+var __m18221 = require('./storage.js');
+var get = __m18221.get;
+var set = __m18221.set;
+var remove = __m18221.remove;
+var keys = __m18221.keys;
+var estimateBytes = __m18221.estimateBytes;
+var __m78340 = require('../core/session.js');
+var findOpenSession = __m78340.findOpenSession;
+var sessionize = __m78340.sessionize;
 
 const META_KEY = 'meta';
 const BUTTONS_KEY = 'buttons';
@@ -855,6 +855,22 @@ function removeSession(sessionId) {
   return removed;
 }
 
+/**
+ * 数据签名：事件 + 按钮的规范化指纹，用于判断本地/远端数据是否一致。
+ * 传入 events/buttons 可对指定数据计算（例如比对远端数据）。
+ */
+function dataSignature(events, buttons) {
+  const evs = (events || queryEvents({}))
+    .map((x) => [x.name, x.ts, x.node || '', x.sessionId || '', x.color || ''].join('|'));
+  evs.sort();
+  const bts = (buttons || getButtons())
+    .map((x) => [x.name, x.icon || '', x.color || '', x.enabled ? '1' : '0'].join('|'));
+  const s = evs.join('\n') + '##' + bts.join('\n');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 // ---------------- migrate ----------------
 
 /**
@@ -887,7 +903,7 @@ function migrate() {
   }
   saveMeta({ version: ver });
 }
-module.exports = { getSyncConfig, saveSyncConfig, uid, yearOf, evtKey, getMeta, saveMeta, getButtons, saveButtons, getSettings, saveSettings, appendEvent, removeEvent, clearAllEvents, renameEventName, countByName, importEvents, importButtons, listYearKeys, queryEvents, getEventNodes, recordNode, getOpenSession, abortOpenSession, querySessions, renameNode, removeSession, migrate };
+module.exports = { getSyncConfig, saveSyncConfig, uid, yearOf, evtKey, getMeta, saveMeta, getButtons, saveButtons, getSettings, saveSettings, appendEvent, removeEvent, clearAllEvents, renameEventName, countByName, importEvents, importButtons, listYearKeys, queryEvents, getEventNodes, recordNode, getOpenSession, abortOpenSession, querySessions, renameNode, removeSession, dataSignature, migrate };
 
 });
 __define('utils/time.js', function (module, exports, require) {
@@ -1591,8 +1607,8 @@ module.exports = { esc, toast, confirmbox, promptbox, actionSheet, nodeDialog, o
 __define('utils/sync.js', function (module, exports, require) {
 
 
-var __m82243 = require('./exporter.js');
-var toBackupJSON = __m82243.toBackupJSON;
+var __m57725 = require('./exporter.js');
+var toBackupJSON = __m57725.toBackupJSON;
 
 // GitHub 数据同步：通过 Contents API 上传/下载统一的数据包文件。
 // 仅需一个对目标仓库拥有 contents 读写权限的 Personal Access Token。
@@ -1674,46 +1690,48 @@ function buildSyncPayload(events, buttons) {
   return toBackupJSON(events, buttons);
 }
 
-/** 记录"本机已知的云端数据版本时间"：下载后传 exportedAt，上传后不传（=当前时间）。 */
-function markSynced(exportedAt) {
-  try {
-    localStorage.setItem('sync_exported_at', String(exportedAt == null ? Date.now() : exportedAt));
-  } catch (e) {}
+/** 本机已同步到的数据签名（用于判断本地是否有改动 / 远端是否有更新）。 */
+function getSyncedSig() {
+  try { return localStorage.getItem('sync_sig') || ''; } catch (e) { return ''; }
 }
-module.exports = { fetchRemoteFile, pushRemoteFile, buildSyncPayload, markSynced };
+
+function setSyncedSig(sig) {
+  try { localStorage.setItem('sync_sig', String(sig || '')); } catch (e) {}
+}
+module.exports = { fetchRemoteFile, pushRemoteFile, buildSyncPayload, getSyncedSig, setSyncedSig };
 
 });
 __define('views/home.js', function (module, exports, require) {
 
 
-var __m81606 = require('../utils/db.js');
-var getButtons = __m81606.getButtons;
-var saveButtons = __m81606.saveButtons;
-var appendEvent = __m81606.appendEvent;
-var queryEvents = __m81606.queryEvents;
-var removeEvent = __m81606.removeEvent;
-var renameEventName = __m81606.renameEventName;
-var getEventNodes = __m81606.getEventNodes;
-var recordNode = __m81606.recordNode;
-var getOpenSession = __m81606.getOpenSession;
-var abortOpenSession = __m81606.abortOpenSession;
-var __m6308 = require('../utils/time.js');
-var formatFull = __m6308.formatFull;
-var formatGapText = __m6308.formatGapText;
-var formatHM = __m6308.formatHM;
-var __m30561 = require('../core/stats.js');
-var startOfDay = __m30561.startOfDay;
-var __m24968 = require('../utils/ui.js');
-var esc = __m24968.esc;
-var toast = __m24968.toast;
-var confirmbox = __m24968.confirmbox;
-var promptbox = __m24968.promptbox;
-var actionSheet = __m24968.actionSheet;
-var nodeDialog = __m24968.nodeDialog;
-var onLongPress = __m24968.onLongPress;
-var wasLongPress = __m24968.wasLongPress;
-var __m25565 = require('../utils/icons.js');
-var iconSvg = __m25565.iconSvg;
+var __m97378 = require('../utils/db.js');
+var getButtons = __m97378.getButtons;
+var saveButtons = __m97378.saveButtons;
+var appendEvent = __m97378.appendEvent;
+var queryEvents = __m97378.queryEvents;
+var removeEvent = __m97378.removeEvent;
+var renameEventName = __m97378.renameEventName;
+var getEventNodes = __m97378.getEventNodes;
+var recordNode = __m97378.recordNode;
+var getOpenSession = __m97378.getOpenSession;
+var abortOpenSession = __m97378.abortOpenSession;
+var __m29062 = require('../utils/time.js');
+var formatFull = __m29062.formatFull;
+var formatGapText = __m29062.formatGapText;
+var formatHM = __m29062.formatHM;
+var __m51843 = require('../core/stats.js');
+var startOfDay = __m51843.startOfDay;
+var __m19899 = require('../utils/ui.js');
+var esc = __m19899.esc;
+var toast = __m19899.toast;
+var confirmbox = __m19899.confirmbox;
+var promptbox = __m19899.promptbox;
+var actionSheet = __m19899.actionSheet;
+var nodeDialog = __m19899.nodeDialog;
+var onLongPress = __m19899.onLongPress;
+var wasLongPress = __m19899.wasLongPress;
+var __m13390 = require('../utils/icons.js');
+var iconSvg = __m13390.iconSvg;
 
 let editing = false;
 
@@ -2081,26 +2099,26 @@ __define('views/stats.js', function (module, exports, require) {
 var core = require('../core/stats.js');
 var iv = require('../core/interval.js');
 var sess = require('../core/session.js');
-var __m81606 = require('../utils/db.js');
-var getButtons = __m81606.getButtons;
-var getSettings = __m81606.getSettings;
-var queryEvents = __m81606.queryEvents;
-var removeEvent = __m81606.removeEvent;
-var getEventNodes = __m81606.getEventNodes;
-var querySessions = __m81606.querySessions;
-var __m6308 = require('../utils/time.js');
-var formatFull = __m6308.formatFull;
-var formatHM = __m6308.formatHM;
-var formatGapText = __m6308.formatGapText;
-var __m64101 = require('../utils/canvasChart.js');
-var drawBarChart = __m64101.drawBarChart;
-var indexAtX = __m64101.indexAtX;
-var drawLineChart = __m64101.drawLineChart;
-var __m24968 = require('../utils/ui.js');
-var esc = __m24968.esc;
-var listDialog = __m24968.listDialog;
-var toast = __m24968.toast;
-var confirmbox = __m24968.confirmbox;
+var __m97378 = require('../utils/db.js');
+var getButtons = __m97378.getButtons;
+var getSettings = __m97378.getSettings;
+var queryEvents = __m97378.queryEvents;
+var removeEvent = __m97378.removeEvent;
+var getEventNodes = __m97378.getEventNodes;
+var querySessions = __m97378.querySessions;
+var __m29062 = require('../utils/time.js');
+var formatFull = __m29062.formatFull;
+var formatHM = __m29062.formatHM;
+var formatGapText = __m29062.formatGapText;
+var __m33555 = require('../utils/canvasChart.js');
+var drawBarChart = __m33555.drawBarChart;
+var indexAtX = __m33555.indexAtX;
+var drawLineChart = __m33555.drawLineChart;
+var __m19899 = require('../utils/ui.js');
+var esc = __m19899.esc;
+var listDialog = __m19899.listDialog;
+var toast = __m19899.toast;
+var confirmbox = __m19899.confirmbox;
 
 const DAY = 24 * 3600 * 1000;
 const RANGES = { week: '周', month: '月', year: '年' };
@@ -2428,22 +2446,22 @@ module.exports = { render, getActive };
 __define('views/history.js', function (module, exports, require) {
 
 
-var __m81606 = require('../utils/db.js');
-var getButtons = __m81606.getButtons;
-var queryEvents = __m81606.queryEvents;
-var removeEvent = __m81606.removeEvent;
-var querySessions = __m81606.querySessions;
-var removeSession = __m81606.removeSession;
-var __m6308 = require('../utils/time.js');
-var formatHM = __m6308.formatHM;
-var formatFull = __m6308.formatFull;
-var formatGapText = __m6308.formatGapText;
-var __m24968 = require('../utils/ui.js');
-var esc = __m24968.esc;
-var toast = __m24968.toast;
-var confirmbox = __m24968.confirmbox;
-var __m71434 = require('./home.js');
-var backfillOne = __m71434.backfillOne;
+var __m97378 = require('../utils/db.js');
+var getButtons = __m97378.getButtons;
+var queryEvents = __m97378.queryEvents;
+var removeEvent = __m97378.removeEvent;
+var querySessions = __m97378.querySessions;
+var removeSession = __m97378.removeSession;
+var __m29062 = require('../utils/time.js');
+var formatHM = __m29062.formatHM;
+var formatFull = __m29062.formatFull;
+var formatGapText = __m29062.formatGapText;
+var __m19899 = require('../utils/ui.js');
+var esc = __m19899.esc;
+var toast = __m19899.toast;
+var confirmbox = __m19899.confirmbox;
+var __m94787 = require('./home.js');
+var backfillOne = __m94787.backfillOne;
 
 /** 日期分组键 -> "YYYY年M月D日" */
 function dateKey(ts) {
@@ -2570,44 +2588,45 @@ module.exports = { render };
 __define('views/settings.js', function (module, exports, require) {
 
 
-var __m81606 = require('../utils/db.js');
-var getButtons = __m81606.getButtons;
-var saveButtons = __m81606.saveButtons;
-var getSettings = __m81606.getSettings;
-var saveSettings = __m81606.saveSettings;
-var queryEvents = __m81606.queryEvents;
-var clearAllEvents = __m81606.clearAllEvents;
-var renameEventName = __m81606.renameEventName;
-var countByName = __m81606.countByName;
-var importEvents = __m81606.importEvents;
-var importButtons = __m81606.importButtons;
-var getSyncConfig = __m81606.getSyncConfig;
-var saveSyncConfig = __m81606.saveSyncConfig;
-var renameNode = __m81606.renameNode;
-var __m37249 = require('../utils/exporter.js');
-var downloadCSV = __m37249.downloadCSV;
-var downloadJSON = __m37249.downloadJSON;
-var downloadButtonsJSON = __m37249.downloadButtonsJSON;
-var downloadBackupJSON = __m37249.downloadBackupJSON;
-var __m83492 = require('../utils/import.js');
-var parseJSONRecords = __m83492.parseJSONRecords;
-var parseCSVRecords = __m83492.parseCSVRecords;
-var parseButtonsJSON = __m83492.parseButtonsJSON;
-var parseBackupJSON = __m83492.parseBackupJSON;
-var __m42632 = require('../utils/sync.js');
-var fetchRemoteFile = __m42632.fetchRemoteFile;
-var pushRemoteFile = __m42632.pushRemoteFile;
-var buildSyncPayload = __m42632.buildSyncPayload;
-var markSynced = __m42632.markSynced;
-var __m24968 = require('../utils/ui.js');
-var esc = __m24968.esc;
-var toast = __m24968.toast;
-var confirmbox = __m24968.confirmbox;
-var promptbox = __m24968.promptbox;
-var actionSheet = __m24968.actionSheet;
-var __m25565 = require('../utils/icons.js');
-var iconSvg = __m25565.iconSvg;
-var ICON_LIST = __m25565.ICON_LIST;
+var __m97378 = require('../utils/db.js');
+var getButtons = __m97378.getButtons;
+var saveButtons = __m97378.saveButtons;
+var getSettings = __m97378.getSettings;
+var saveSettings = __m97378.saveSettings;
+var queryEvents = __m97378.queryEvents;
+var clearAllEvents = __m97378.clearAllEvents;
+var renameEventName = __m97378.renameEventName;
+var countByName = __m97378.countByName;
+var importEvents = __m97378.importEvents;
+var importButtons = __m97378.importButtons;
+var getSyncConfig = __m97378.getSyncConfig;
+var saveSyncConfig = __m97378.saveSyncConfig;
+var renameNode = __m97378.renameNode;
+var dataSignature = __m97378.dataSignature;
+var __m9927 = require('../utils/exporter.js');
+var downloadCSV = __m9927.downloadCSV;
+var downloadJSON = __m9927.downloadJSON;
+var downloadButtonsJSON = __m9927.downloadButtonsJSON;
+var downloadBackupJSON = __m9927.downloadBackupJSON;
+var __m91760 = require('../utils/import.js');
+var parseJSONRecords = __m91760.parseJSONRecords;
+var parseCSVRecords = __m91760.parseCSVRecords;
+var parseButtonsJSON = __m91760.parseButtonsJSON;
+var parseBackupJSON = __m91760.parseBackupJSON;
+var __m87215 = require('../utils/sync.js');
+var fetchRemoteFile = __m87215.fetchRemoteFile;
+var pushRemoteFile = __m87215.pushRemoteFile;
+var buildSyncPayload = __m87215.buildSyncPayload;
+var setSyncedSig = __m87215.setSyncedSig;
+var __m19899 = require('../utils/ui.js');
+var esc = __m19899.esc;
+var toast = __m19899.toast;
+var confirmbox = __m19899.confirmbox;
+var promptbox = __m19899.promptbox;
+var actionSheet = __m19899.actionSheet;
+var __m13390 = require('../utils/icons.js');
+var iconSvg = __m13390.iconSvg;
+var ICON_LIST = __m13390.ICON_LIST;
 
 const COLORS = [
   '#4cb6ac', '#FF6B6B', '#4D96FF', '#F9C74F', '#9B5DE5', '#00BBF9',
@@ -3057,7 +3076,7 @@ function render(container) {
     try {
       const payload = buildSyncPayload(queryEvents({}), getButtons());
       await pushRemoteFile({ ...cfg, message: 'tick-log 保存并同步', content: payload });
-      markSynced();
+      setSyncedSig(dataSignature());
       toast('已保存并同步到 GitHub');
     } catch (err) {
       toast('同步失败：' + err.message);
@@ -3072,7 +3091,7 @@ function render(container) {
     try {
       const payload = buildSyncPayload(queryEvents({}), getButtons());
       await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
-      markSynced();
+      setSyncedSig(dataSignature());
       toast('已上传到 GitHub');
     } catch (err) {
       toast('上传失败：' + err.message);
@@ -3106,7 +3125,7 @@ function render(container) {
         summary += (summary ? '；' : '') + `按钮 新增 ${r.added} 个${r.updated ? `，更新 ${r.updated} 个` : ''}`;
       }
       toast('下载完成：' + summary);
-      markSynced(data.exportedAt);
+      setSyncedSig(dataSignature(data.events || [], data.buttons || []));
       render(container);
     } catch (err) {
       toast('下载失败：' + err.message);
@@ -3222,17 +3241,23 @@ module.exports = { render };
 __define('app.js', function (module, exports, require) {
 
 
-var __m94843 = require('./utils/db.js');
-var migrate = __m94843.migrate;
-var getSyncConfig = __m94843.getSyncConfig;
-var importEvents = __m94843.importEvents;
-var importButtons = __m94843.importButtons;
-var __m50689 = require('./utils/sync.js');
-var fetchRemoteFile = __m50689.fetchRemoteFile;
-var markSynced = __m50689.markSynced;
-var __m62560 = require('./utils/ui.js');
-var confirmbox = __m62560.confirmbox;
-var toast = __m62560.toast;
+var __m91525 = require('./utils/db.js');
+var migrate = __m91525.migrate;
+var getSyncConfig = __m91525.getSyncConfig;
+var importEvents = __m91525.importEvents;
+var importButtons = __m91525.importButtons;
+var queryEvents = __m91525.queryEvents;
+var getButtons = __m91525.getButtons;
+var dataSignature = __m91525.dataSignature;
+var __m33098 = require('./utils/sync.js');
+var fetchRemoteFile = __m33098.fetchRemoteFile;
+var pushRemoteFile = __m33098.pushRemoteFile;
+var buildSyncPayload = __m33098.buildSyncPayload;
+var getSyncedSig = __m33098.getSyncedSig;
+var setSyncedSig = __m33098.setSyncedSig;
+var __m68647 = require('./utils/ui.js');
+var confirmbox = __m68647.confirmbox;
+var toast = __m68647.toast;
 var home = require('./views/home.js');
 var stats = require('./views/stats.js');
 var history = require('./views/history.js');
@@ -3244,7 +3269,6 @@ const ROUTES = {
   '#/history': history,
   '#/settings': settings
 };
-const SYNC_INTERVAL = 24 * 3600 * 1000; // 数据同步检测间隔：24 小时
 
 function currentRoute() {
   let hash = location.hash.split('?')[0];
@@ -3272,11 +3296,66 @@ if ('serviceWorker' in navigator) {
 migrate();
 render();
 
-// 首屏渲染后再做后台检测，不阻塞启动
-setTimeout(async () => {
-  await checkVersion();
+// 打开第一时间：检测云端是否有新数据 → 提示同步；随后再检测版本
+(async () => {
   await checkRemoteSync();
-}, 3000);
+  await checkVersion();
+})();
+
+// 页面关闭 / 切到后台：把本地最新数据上传同步
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') uploadIfChanged();
+});
+window.addEventListener('pagehide', uploadIfChanged);
+
+/** 打开时检测：远端数据与本机已同步签名不一致 → 提示同步。 */
+async function checkRemoteSync() {
+  try {
+    const cfg = getSyncConfig();
+    if (!cfg.token || !cfg.repo) return; // 未配置同步
+    const remote = await fetchRemoteFile(cfg);
+    if (!remote) return;
+    const remoteSig = dataSignature(remote.events || [], remote.buttons || []);
+    if (remoteSig === getSyncedSig()) return; // 与已同步版本一致，无新数据
+    const ok = await confirmbox({
+      title: '云端有新数据',
+      message: '检测到云端数据有更新，是否同步到本机？（本地记录不会丢失）',
+      confirmText: '立即同步',
+      cancelText: '暂不'
+    });
+    if (!ok) return;
+    let summary = '';
+    if (Array.isArray(remote.events) && remote.events.length) {
+      const r = importEvents(remote.events);
+      summary += `记录 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
+    }
+    if (Array.isArray(remote.buttons) && remote.buttons.length) {
+      const r = importButtons(remote.buttons);
+      summary += (summary ? '，' : '') + `按钮 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
+    }
+    setSyncedSig(remoteSig);
+    toast('已同步云端数据' + (summary ? '：' + summary : ''));
+    render();
+  } catch (e) { /* 离线或网络异常，忽略 */ }
+}
+
+/** 关闭时：本地数据相比上次同步有改动 → 上传最新数据。 */
+let uploading = false;
+async function uploadIfChanged() {
+  if (uploading) return;
+  try {
+    const cfg = getSyncConfig();
+    if (!cfg.token || !cfg.repo) return;
+    const sig = dataSignature();
+    if (sig === getSyncedSig()) return; // 无本地改动
+    uploading = true;
+    const payload = buildSyncPayload(queryEvents({}), getButtons());
+    await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
+    setSyncedSig(sig);
+  } catch (e) { /* 忽略网络错误 */ } finally {
+    uploading = false;
+  }
+}
 
 /** 版本检测：version.json 与本地记录比较，有新版本弹手动升级提示。 */
 async function checkVersion() {
@@ -3299,41 +3378,6 @@ async function checkVersion() {
       location.reload();
     }
   } catch (e) { /* 离线或网络异常，忽略 */ }
-}
-
-/** 云端数据检测：每天一次，远端有更新则提示是否同步。 */
-async function checkRemoteSync() {
-  try {
-    const cfg = getSyncConfig();
-    if (!cfg.token || !cfg.repo) return; // 未配置同步
-    const lastCheck = Number(localStorage.getItem('sync_last_check') || 0);
-    if (Date.now() - lastCheck < SYNC_INTERVAL) return;
-    localStorage.setItem('sync_last_check', String(Date.now()));
-    const remote = await fetchRemoteFile(cfg);
-    if (!remote) return;
-    const remoteAt = Number(remote.exportedAt || 0);
-    const localAt = Number(localStorage.getItem('sync_exported_at') || 0);
-    if (remoteAt <= localAt) return;
-    const ok = await confirmbox({
-      title: '云端有更新',
-      message: '检测到云端数据有更新（' + new Date(remoteAt).toLocaleString() + '），是否同步最新数据？',
-      confirmText: '立即同步',
-      cancelText: '暂不'
-    });
-    if (!ok) { markSynced(remoteAt); return; }
-    let summary = '';
-    if (Array.isArray(remote.events) && remote.events.length) {
-      const r = importEvents(remote.events);
-      summary += `记录 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
-    }
-    if (Array.isArray(remote.buttons) && remote.buttons.length) {
-      const r = importButtons(remote.buttons);
-      summary += (summary ? '，' : '') + `按钮 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
-    }
-    markSynced(remoteAt);
-    toast('已同步云端数据' + (summary ? '：' + summary : ''));
-    render();
-  } catch (e) { /* 忽略网络错误 */ }
 }
 
 });

@@ -1,7 +1,7 @@
 'use strict';
 
-import { migrate, getSyncConfig, importEvents, importButtons } from './utils/db.js';
-import { fetchRemoteFile, markSynced } from './utils/sync.js';
+import { migrate, getSyncConfig, importEvents, importButtons, queryEvents, getButtons, dataSignature } from './utils/db.js';
+import { fetchRemoteFile, pushRemoteFile, buildSyncPayload, getSyncedSig, setSyncedSig } from './utils/sync.js';
 import { confirmbox, toast } from './utils/ui.js';
 import * as home from './views/home.js';
 import * as stats from './views/stats.js';
@@ -14,7 +14,6 @@ const ROUTES = {
   '#/history': history,
   '#/settings': settings
 };
-const SYNC_INTERVAL = 24 * 3600 * 1000; // 数据同步检测间隔：24 小时
 
 function currentRoute() {
   let hash = location.hash.split('?')[0];
@@ -42,11 +41,66 @@ if ('serviceWorker' in navigator) {
 migrate();
 render();
 
-// 首屏渲染后再做后台检测，不阻塞启动
-setTimeout(async () => {
-  await checkVersion();
+// 打开第一时间：检测云端是否有新数据 → 提示同步；随后再检测版本
+(async () => {
   await checkRemoteSync();
-}, 3000);
+  await checkVersion();
+})();
+
+// 页面关闭 / 切到后台：把本地最新数据上传同步
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') uploadIfChanged();
+});
+window.addEventListener('pagehide', uploadIfChanged);
+
+/** 打开时检测：远端数据与本机已同步签名不一致 → 提示同步。 */
+async function checkRemoteSync() {
+  try {
+    const cfg = getSyncConfig();
+    if (!cfg.token || !cfg.repo) return; // 未配置同步
+    const remote = await fetchRemoteFile(cfg);
+    if (!remote) return;
+    const remoteSig = dataSignature(remote.events || [], remote.buttons || []);
+    if (remoteSig === getSyncedSig()) return; // 与已同步版本一致，无新数据
+    const ok = await confirmbox({
+      title: '云端有新数据',
+      message: '检测到云端数据有更新，是否同步到本机？（本地记录不会丢失）',
+      confirmText: '立即同步',
+      cancelText: '暂不'
+    });
+    if (!ok) return;
+    let summary = '';
+    if (Array.isArray(remote.events) && remote.events.length) {
+      const r = importEvents(remote.events);
+      summary += `记录 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
+    }
+    if (Array.isArray(remote.buttons) && remote.buttons.length) {
+      const r = importButtons(remote.buttons);
+      summary += (summary ? '，' : '') + `按钮 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
+    }
+    setSyncedSig(remoteSig);
+    toast('已同步云端数据' + (summary ? '：' + summary : ''));
+    render();
+  } catch (e) { /* 离线或网络异常，忽略 */ }
+}
+
+/** 关闭时：本地数据相比上次同步有改动 → 上传最新数据。 */
+let uploading = false;
+async function uploadIfChanged() {
+  if (uploading) return;
+  try {
+    const cfg = getSyncConfig();
+    if (!cfg.token || !cfg.repo) return;
+    const sig = dataSignature();
+    if (sig === getSyncedSig()) return; // 无本地改动
+    uploading = true;
+    const payload = buildSyncPayload(queryEvents({}), getButtons());
+    await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
+    setSyncedSig(sig);
+  } catch (e) { /* 忽略网络错误 */ } finally {
+    uploading = false;
+  }
+}
 
 /** 版本检测：version.json 与本地记录比较，有新版本弹手动升级提示。 */
 async function checkVersion() {
@@ -69,39 +123,4 @@ async function checkVersion() {
       location.reload();
     }
   } catch (e) { /* 离线或网络异常，忽略 */ }
-}
-
-/** 云端数据检测：每天一次，远端有更新则提示是否同步。 */
-async function checkRemoteSync() {
-  try {
-    const cfg = getSyncConfig();
-    if (!cfg.token || !cfg.repo) return; // 未配置同步
-    const lastCheck = Number(localStorage.getItem('sync_last_check') || 0);
-    if (Date.now() - lastCheck < SYNC_INTERVAL) return;
-    localStorage.setItem('sync_last_check', String(Date.now()));
-    const remote = await fetchRemoteFile(cfg);
-    if (!remote) return;
-    const remoteAt = Number(remote.exportedAt || 0);
-    const localAt = Number(localStorage.getItem('sync_exported_at') || 0);
-    if (remoteAt <= localAt) return;
-    const ok = await confirmbox({
-      title: '云端有更新',
-      message: '检测到云端数据有更新（' + new Date(remoteAt).toLocaleString() + '），是否同步最新数据？',
-      confirmText: '立即同步',
-      cancelText: '暂不'
-    });
-    if (!ok) { markSynced(remoteAt); return; }
-    let summary = '';
-    if (Array.isArray(remote.events) && remote.events.length) {
-      const r = importEvents(remote.events);
-      summary += `记录 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
-    }
-    if (Array.isArray(remote.buttons) && remote.buttons.length) {
-      const r = importButtons(remote.buttons);
-      summary += (summary ? '，' : '') + `按钮 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
-    }
-    markSynced(remoteAt);
-    toast('已同步云端数据' + (summary ? '：' + summary : ''));
-    render();
-  } catch (e) { /* 忽略网络错误 */ }
 }

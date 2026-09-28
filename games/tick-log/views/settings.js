@@ -3,11 +3,11 @@
 import {
   getButtons, saveButtons, getSettings, saveSettings,
   queryEvents, clearAllEvents, renameEventName, countByName, importEvents, importButtons,
-  getSyncConfig, saveSyncConfig, renameNode
+  getSyncConfig, saveSyncConfig, renameNode, dataSignature
 } from '../utils/db.js';
 import { downloadCSV, downloadJSON, downloadButtonsJSON, downloadBackupJSON } from '../utils/exporter.js';
 import { parseJSONRecords, parseCSVRecords, parseButtonsJSON, parseBackupJSON } from '../utils/import.js';
-import { fetchRemoteFile, pushRemoteFile, buildSyncPayload, markSynced } from '../utils/sync.js';
+import { fetchRemoteFile, pushRemoteFile, buildSyncPayload, setSyncedSig } from '../utils/sync.js';
 import { esc, toast, confirmbox, promptbox, actionSheet } from '../utils/ui.js';
 import { iconSvg, ICON_LIST } from '../utils/icons.js';
 
@@ -459,7 +459,7 @@ export function render(container) {
     try {
       const payload = buildSyncPayload(queryEvents({}), getButtons());
       await pushRemoteFile({ ...cfg, message: 'tick-log 保存并同步', content: payload });
-      markSynced();
+      setSyncedSig(dataSignature());
       toast('已保存并同步到 GitHub');
     } catch (err) {
       toast('同步失败：' + err.message);
@@ -474,7 +474,7 @@ export function render(container) {
     try {
       const payload = buildSyncPayload(queryEvents({}), getButtons());
       await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
-      markSynced();
+      setSyncedSig(dataSignature());
       toast('已上传到 GitHub');
     } catch (err) {
       toast('上传失败：' + err.message);
@@ -508,7 +508,7 @@ export function render(container) {
         summary += (summary ? '；' : '') + `按钮 新增 ${r.added} 个${r.updated ? `，更新 ${r.updated} 个` : ''}`;
       }
       toast('下载完成：' + summary);
-      markSynced(data.exportedAt);
+      setSyncedSig(dataSignature(data.events || [], data.buttons || []));
       render(container);
     } catch (err) {
       toast('下载失败：' + err.message);

@@ -82,9 +82,11 @@ export function buildSyncPayload(events, buttons) {
   return toBackupJSON(events, buttons);
 }
 
-/** 记录"本机已知的云端数据版本时间"：下载后传 exportedAt，上传后不传（=当前时间）。 */
-export function markSynced(exportedAt) {
-  try {
-    localStorage.setItem('sync_exported_at', String(exportedAt == null ? Date.now() : exportedAt));
-  } catch (e) {}
+/** 本机已同步到的数据签名（用于判断本地是否有改动 / 远端是否有更新）。 */
+export function getSyncedSig() {
+  try { return localStorage.getItem('sync_sig') || ''; } catch (e) { return ''; }
+}
+
+export function setSyncedSig(sig) {
+  try { localStorage.setItem('sync_sig', String(sig || '')); } catch (e) {}
 }

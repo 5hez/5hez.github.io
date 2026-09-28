@@ -413,6 +413,22 @@ export function removeSession(sessionId) {
   return removed;
 }
 
+/**
+ * 数据签名：事件 + 按钮的规范化指纹，用于判断本地/远端数据是否一致。
+ * 传入 events/buttons 可对指定数据计算（例如比对远端数据）。
+ */
+export function dataSignature(events, buttons) {
+  const evs = (events || queryEvents({}))
+    .map((x) => [x.name, x.ts, x.node || '', x.sessionId || '', x.color || ''].join('|'));
+  evs.sort();
+  const bts = (buttons || getButtons())
+    .map((x) => [x.name, x.icon || '', x.color || '', x.enabled ? '1' : '0'].join('|'));
+  const s = evs.join('\n') + '##' + bts.join('\n');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 // ---------------- migrate ----------------
 
 /**
