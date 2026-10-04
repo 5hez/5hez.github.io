@@ -5,7 +5,7 @@
 // - version.json 始终走网络（版本检测）。
 // 注意：Service Worker 仅在 HTTPS 或 localhost 环境下生效。
 
-const CACHE = 'tick-log-v6';
+const CACHE = 'tick-log-v7';
 
 const ASSETS = [
   './',
@@ -13,6 +13,7 @@ const ASSETS = [
   './manifest.webmanifest',
   './app.css',
   './app.js',
+  './sortable.min.js',
   './core/stats.js',
   './core/interval.js',
   './core/session.js',

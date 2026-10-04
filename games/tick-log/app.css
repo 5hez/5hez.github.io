@@ -1082,5 +1082,13 @@ button {
   justify-content: center;
   padding: 0;
 }
-.cell.dragging { opacity: 0.6; transform: scale(0.98); }
+/* SortableJS 拖拽排序（编辑模式） */
+.sortable-chosen { opacity: 0.95; }
+.sortable-ghost { opacity: 0.35; }   /* 原位占位虚影 */
+.sortable-drag { opacity: 1; }
+.sortable-fallback {                  /* 跟随手指/鼠标的克隆体 */
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  /* 注意：不要用 transform —— SortableJS 用 transform: translate3d 移动克隆体 */
+}
 .group-open { color: var(--primary); }

@@ -7,8 +7,10 @@ import { esc, toast, confirmbox, promptbox, actionSheet, nodeDialog, onLongPress
 import { iconSvg } from '../utils/icons.js';
 
 let editing = false;
+let sortable = null; // SortableJS 实例（编辑模式拖拽排序）
 
 export function render(container) {
+  if (sortable) { try { sortable.destroy(); } catch (e) {} sortable = null; }
   const buttons = getButtons().filter((b) => b.enabled);
   const allEvents = queryEvents({});
   const totalCount = allEvents.length;
@@ -176,38 +178,28 @@ const act = await actionSheet(['编辑名称', '补录一笔', '删除按钮']);
   });
 }
 
+/** 首页快捷按钮拖拽排序：用 SortableJS（内置，MIT）实现，触摸端更顺滑。 */
 function enableDrag(container) {
   const grid = container.querySelector('.grid');
-  let dragEl = null;
-
-  grid.querySelectorAll('.cell[data-id]').forEach((cell) => {
-    cell.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.cell-del')) return;
-      dragEl = cell;
-      cell.classList.add('dragging');
-      try { cell.setPointerCapture(e.pointerId); } catch {}
-      e.preventDefault();
-    });
-
-    cell.addEventListener('pointermove', (e) => {
-      if (dragEl !== cell) return;
-      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.cell[data-id]');
-      if (over && over !== cell) {
-        const rect = over.getBoundingClientRect();
-        const after = (e.clientY - rect.top) > rect.height / 2;
-        grid.insertBefore(cell, after ? over.nextElementSibling : over);
-      }
-    });
-
-    const end = (e) => {
-      if (dragEl !== cell) return;
-      dragEl = null;
-      cell.classList.remove('dragging');
-      try { cell.releasePointerCapture(e.pointerId); } catch {}
+  const Ctor = window.Sortable;
+  if (!grid || !Ctor) return; // 脚本异常未加载时兜底
+  sortable = Ctor.create(grid, {
+    animation: 180,
+    draggable: '.cell[data-id]',
+    filter: '.cell-del',
+    preventOnFilter: false,
+    forceFallback: true,
+    fallbackOnBody: true,
+    fallbackClass: 'sortable-fallback',
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    touchStartThreshold: 3,
+    onEnd: () => {
+      const add = grid.querySelector('.cell-add');
+      if (add) grid.appendChild(add); // 「添加」格始终保持在最后
       persistOrder(grid);
-    };
-    cell.addEventListener('pointerup', end);
-    cell.addEventListener('pointercancel', end);
+    }
   });
 }
 
