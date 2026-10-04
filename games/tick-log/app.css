@@ -1087,6 +1087,8 @@ button {
 .sortable-ghost { opacity: 0.35; }   /* 原位占位虚影 */
 .sortable-drag { opacity: 1; }
 .sortable-fallback {                  /* 跟随手指/鼠标的克隆体 */
+  transition: none !important;        /* 关键：去掉 .cell 的 transform 过渡，否则跟手会「慢半拍」 */
+  will-change: transform;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
   border-radius: 16px;
   /* 注意：不要用 transform —— SortableJS 用 transform: translate3d 移动克隆体 */
