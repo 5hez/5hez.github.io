@@ -88,6 +88,10 @@ export function render(container) {
   container.querySelectorAll('.seg-item').forEach((s) => s.addEventListener('click', () => {
     if (s.dataset.cmode) {
       curChartMode = s.dataset.cmode;
+      // 频率/时长 是页面模板里的按钮（不在 #stats-body 内），需在这里同步高亮态
+      container.querySelectorAll('.seg-item[data-cmode]').forEach((b) => {
+        b.classList.toggle('on', b.dataset.cmode === curChartMode);
+      });
       drawStats(container, state);
       return;
     }
@@ -309,26 +313,36 @@ function setupChart(container, { series, axisLabels, bucketTs, tickEvery, active
   ctx.scale(dpr, dpr);
   drawBarChart(ctx, { width: w, height: h, labels: axisLabels, series, tickEvery });
 
+  const openDay = (ts, label) => {
+    const build = () => {
+      // active 为 null 时 queryEvents 不过滤事件名 -> 当日全部记录
+      const list = queryEvents({ name: active, fromTs: ts, toTs: ts + DAY - 1 });
+      return {
+        title: label + '的记录（' + list.length + ' 条）',
+        items: list.map((x) => ({ id: x.id, label: x.name + ' ' + formatHM(x.ts) }))
+      };
+    };
+    const first = build();
+    if (!first.items.length) return;
+    listDialog({
+      title: first.title,
+      items: first.items,
+      onDelete: async (item) => {
+        const ok = await confirmbox({ title: '删除记录', message: '确认删除这条记录？', danger: true });
+        if (!ok) return false;
+        removeEvent(item.id);
+        toast('已删除');
+        render(viewEl); // 刷新统计页图表
+        return true; // 删除成功 -> 关闭弹窗
+      }
+    });
+  };
+
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const idx = indexAtX(e.clientX - rect.left, w, series && series[0] ? series[0].counts.length : 0);
     if (idx < 0 || !bucketTs[idx]) return;
-    const fromTs = bucketTs[idx];
-    // active 为 null 时 queryEvents 不过滤事件名 -> 当日全部记录
-    const dayStats = queryEvents({ name: active, fromTs, toTs: fromTs + DAY - 1 });
-    if (!dayStats.length) return;
-    listDialog({
-      title: axisLabels[idx] + '的记录（' + dayStats.length + ' 条）',
-      items: dayStats.map((x) => ({ id: x.id, label: x.name + ' ' + formatHM(x.ts) })),
-      onDelete: async (item) => {
-        const ok = await confirmbox({ title: '删除记录', message: '确认删除这条记录？', danger: true });
-        if (ok) {
-          removeEvent(item.id);
-          toast('已删除');
-          render(viewEl);
-        }
-      }
-    });
+    openDay(bucketTs[idx], axisLabels[idx]);
   });
 }
 

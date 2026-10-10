@@ -30,8 +30,8 @@ export function toButtonsJSON(buttons) {
 /**
  * 统一备份格式（与 GitHub 云同步同一结构）：记录 + 快捷按钮合并为一个文件。
  */
-export function toBackupJSON(events, buttons, tombstones) {
-  return JSON.stringify({ app: 'tick-log', version: 1, exportedAt: Date.now(), events, buttons, tombstones: tombstones || [] });
+export function toBackupJSON(events, buttons, tombstones, buttonTombstones) {
+  return JSON.stringify({ app: 'tick-log', version: 1, exportedAt: Date.now(), events, buttons, tombstones: tombstones || [], buttonTombstones: buttonTombstones || [] });
 }
 
 /**
@@ -60,6 +60,6 @@ export function downloadButtonsJSON(buttons, filename) {
   download(new Blob([toButtonsJSON(buttons)], { type: 'application/json' }), filename || 'tick-log-buttons.json');
 }
 
-export function downloadBackupJSON(events, buttons, tombstones, filename) {
-  download(new Blob([toBackupJSON(events, buttons, tombstones)], { type: 'application/json' }), filename || 'tick-log-all.json');
+export function downloadBackupJSON(events, buttons, tombstones, buttonTombstones, filename) {
+  download(new Blob([toBackupJSON(events, buttons, tombstones, buttonTombstones)], { type: 'application/json' }), filename || 'tick-log-all.json');
 }

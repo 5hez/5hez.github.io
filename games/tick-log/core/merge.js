@@ -31,3 +31,23 @@ export function applyTombstones(events, tombstones) {
   if (!dead.size) return (events || []).slice();
   return (events || []).filter((e) => e && !dead.has(e.id));
 }
+
+/** 合并多组按钮（事件）墓碑：按 name 取最新 deletedAt。 */
+export function mergeButtonTombstones(...groups) {
+  const map = new Map();
+  groups.forEach((g) => {
+    (g || []).forEach((t) => {
+      if (!t || !t.name) return;
+      const at = Number(t.deletedAt) || 0;
+      if (!map.has(t.name) || at > map.get(t.name)) map.set(t.name, at);
+    });
+  });
+  return [...map.entries()].map(([name, deletedAt]) => ({ name, deletedAt }));
+}
+
+/** 按钮墓碑 name 集合。 */
+export function buttonTombstoneNames(tombstones) {
+  const s = new Set();
+  (tombstones || []).forEach((t) => { if (t && t.name) s.add(t.name); });
+  return s;
+}

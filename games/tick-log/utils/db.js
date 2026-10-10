@@ -2,7 +2,7 @@
 
 import { get, set, remove, keys, estimateBytes } from './storage.js';
 import { findOpenSession, sessionize } from '../core/session.js';
-import { mergeTombstones, tombstoneIds } from '../core/merge.js';
+import { mergeTombstones, tombstoneIds, mergeButtonTombstones, buttonTombstoneNames } from '../core/merge.js';
 
 const META_KEY = 'meta';
 const BUTTONS_KEY = 'buttons';
@@ -10,6 +10,7 @@ const SETTINGS_KEY = 'settings';
 const SYNC_KEY = 'gh_sync';
 const EVT_PREFIX = 'events_';
 const TOMB_KEY = 'tombstones';
+const BTN_TOMB_KEY = 'buttonTombstones';
 const ONE_MB = 1024 * 1024;
 
 export function getSyncConfig() {
@@ -83,6 +84,44 @@ export function getButtons() {
 export function saveButtons(list) {
   list.forEach((b, i) => { b.sort = i; });
   set(BUTTONS_KEY, list);
+}
+
+// ---- 按钮墓碑（事件删除：让「删除事件」也能同步、不复活） ----
+
+export function getButtonTombstones() {
+  return get(BTN_TOMB_KEY, []);
+}
+
+export function saveButtonTombstones(list) {
+  set(BTN_TOMB_KEY, list);
+}
+
+export function addButtonTombstones(names) {
+  const list = (names || []).filter(Boolean);
+  if (!list.length) return;
+  const now = Date.now();
+  saveButtonTombstones(mergeButtonTombstones(getButtonTombstones(), list.map((name) => ({ name, deletedAt: now }))));
+}
+
+/** 按按钮墓碑删掉本地同名按钮。返回移除数量。 */
+function applyLocalButtonTombstones() {
+  const dead = buttonTombstoneNames(getButtonTombstones());
+  if (!dead.size) return 0;
+  const list = getButtons();
+  const next = list.filter((b) => !dead.has(b.name));
+  if (next.length !== list.length) { saveButtons(next); return list.length - next.length; }
+  return 0;
+}
+
+/** 删除若干按钮（按 id），并写墓碑供同步传播。返回删除数量。 */
+export function removeButtons(ids) {
+  const set = new Set(ids || []);
+  const list = getButtons();
+  const removed = list.filter((b) => set.has(b.id));
+  if (!removed.length) return 0;
+  saveButtons(list.filter((b) => !set.has(b.id)));
+  addButtonTombstones(removed.map((b) => b.name));
+  return removed.length;
 }
 
 // ---------------- settings ----------------
@@ -283,12 +322,19 @@ export function importEvents(list, tombstones) {
  * 新名称追加到末尾。导入后保证至少有一个启用按钮。
  * 返回 { added, updated }。
  */
-export function importButtons(list) {
-  const cur = getButtons();
+export function importButtons(list, buttonTombstones) {
+  // 合并远端按钮墓碑并应用（删掉本地已删的按钮）
+  if (Array.isArray(buttonTombstones) && buttonTombstones.length) {
+    saveButtonTombstones(mergeButtonTombstones(getButtonTombstones(), buttonTombstones));
+    applyLocalButtonTombstones();
+  }
+  const deadNames = buttonTombstoneNames(getButtonTombstones());
+  const cur = getButtons().filter((b) => !deadNames.has(b.name));
   const byName = new Map(cur.map((b) => [b.name, b]));
   let added = 0;
   let updated = 0;
   (list || []).forEach((b) => {
+    if (!b || !b.name || deadNames.has(b.name)) return; // 已删除：不再导入
     const ex = byName.get(b.name);
     if (ex) {
       ex.icon = b.icon;
@@ -465,7 +511,7 @@ export function removeSession(sessionId) {
  * 数据签名：事件 + 按钮的规范化指纹，用于判断本地/远端数据是否一致。
  * 传入 events/buttons 可对指定数据计算（例如比对远端数据）。
  */
-export function dataSignature(events, buttons, tombstones) {
+export function dataSignature(events, buttons, tombstones, buttonTombstones) {
   const evs = (events || queryEvents({}))
     .map((x) => [x.name, x.ts, x.node || '', x.sessionId || '', x.color || ''].join('|'));
   evs.sort();
@@ -474,7 +520,10 @@ export function dataSignature(events, buttons, tombstones) {
   const tbs = (tombstones || getTombstones())
     .map((t) => t.id + ':' + (t.deletedAt || 0));
   tbs.sort();
-  const s = evs.join('\n') + '##' + bts.join('\n') + '##' + tbs.join('\n');
+  const btbs = (buttonTombstones || getButtonTombstones())
+    .map((t) => t.name + ':' + (t.deletedAt || 0));
+  btbs.sort();
+  const s = evs.join('\n') + '##' + bts.join('\n') + '##' + tbs.join('\n') + '##' + btbs.join('\n');
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);

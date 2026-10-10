@@ -126,11 +126,21 @@ export function parseTombstones(text) {
     .filter(Boolean);
 }
 
-/** 解析统一备份：{ events, buttons, tombstones }，复用各自的解析逻辑。 */
+/** 解析按钮墓碑：{ buttonTombstones: [...] } 或纯数组。 */
+export function parseButtonTombstones(text) {
+  const data = JSON.parse(text);
+  const list = Array.isArray(data) ? data : (Array.isArray(data.buttonTombstones) ? data.buttonTombstones : []);
+  return list
+    .map((t) => (t && t.name ? { name: String(t.name), deletedAt: Number(t.deletedAt) || 0 } : null))
+    .filter(Boolean);
+}
+
+/** 解析统一备份：{ events, buttons, tombstones, buttonTombstones }，复用各自的解析逻辑。 */
 export function parseBackupJSON(text) {
   return {
     events: parseJSONRecords(text),
     buttons: parseButtonsJSON(text),
-    tombstones: parseTombstones(text)
+    tombstones: parseTombstones(text),
+    buttonTombstones: parseButtonTombstones(text)
   };
 }

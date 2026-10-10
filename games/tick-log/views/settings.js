@@ -3,7 +3,7 @@
 import {
   getButtons, saveButtons, getSettings, saveSettings,
   queryEvents, clearAllEvents, renameEventName, countByName, importEvents, importButtons,
-  getSyncConfig, saveSyncConfig, renameNode, dataSignature, getTombstones
+  getSyncConfig, saveSyncConfig, renameNode, dataSignature, getTombstones, getButtonTombstones, removeButtons
 } from '../utils/db.js';
 import { downloadCSV, downloadJSON, downloadButtonsJSON, downloadBackupJSON } from '../utils/exporter.js';
 import { parseJSONRecords, parseCSVRecords, parseButtonsJSON, parseBackupJSON } from '../utils/import.js';
@@ -203,7 +203,7 @@ export function render(container) {
       const target = buttons.find((b) => b.id === id);
       if (target && !target.enabled) {
         // 已隐藏：直接移除
-        saveButtons(buttons.filter((b) => b.id !== id));
+        removeButtons([id]);
         render(container);
         return;
       }
@@ -214,7 +214,7 @@ export function render(container) {
         danger: true
       });
       if (ok) {
-        saveButtons(buttons.filter((b) => b.id !== id));
+        removeButtons([id]);
         render(container);
       }
     });
@@ -328,7 +328,7 @@ export function render(container) {
     const records = queryEvents({});
     const btns = getButtons();
     if (!records.length && !btns.length) return toast('暂无数据');
-    downloadBackupJSON(records, btns, getTombstones(), 'tick-log-all.json');
+    downloadBackupJSON(records, btns, getTombstones(), getButtonTombstones(), 'tick-log-all.json');
     toast('已导出全部数据');
   });
 
@@ -361,9 +361,10 @@ export function render(container) {
         toast('备份文件解析失败');
         return;
       }
-      const { events, buttons, tombstones } = parsed;
+      const { events, buttons, tombstones, buttonTombstones } = parsed;
       const tc = (tombstones || []).length;
-      if (!events.length && !buttons.length && !tc) { toast('未识别到有效数据'); return; }
+      const btc = (buttonTombstones || []).length;
+      if (!events.length && !buttons.length && !tc && !btc) { toast('未识别到有效数据'); return; }
       const ok = await confirmbox({
         title: '导入全部数据',
         message: `将导入 ${events.length} 条记录、${buttons.length} 个快捷按钮（合并去重，重复自动跳过）。`,
@@ -375,8 +376,8 @@ export function render(container) {
         const r = importEvents(events, tombstones);
         summary += `记录 ${r.added} 条${r.skipped ? `，跳过重复 ${r.skipped}` : ''}`;
       }
-      if (buttons.length) {
-        const r = importButtons(buttons);
+      if (buttons.length || btc) {
+        const r = importButtons(buttons, buttonTombstones);
         summary += (summary ? '；' : '') + `按钮 新增 ${r.added} 个${r.updated ? `，更新 ${r.updated} 个` : ''}`;
       }
       toast('导入完成：' + summary);
@@ -465,7 +466,7 @@ export function render(container) {
     if (!cfg.token || !cfg.repo) { toast('请先填写并保存 TOKEN 与仓库'); return; }
     setBusy('gh-save-sync', true);
     try {
-      const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones());
+      const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones(), getButtonTombstones());
       await pushRemoteFile({ ...cfg, message: 'tick-log 保存并同步', content: payload });
       setSyncedSig(dataSignature());
       toast('已保存并同步到 GitHub');
@@ -480,7 +481,7 @@ export function render(container) {
     if (!cfg.token || !cfg.repo) { toast('请先填写并保存同步配置'); return; }
     setBusy('gh-upload', true);
     try {
-      const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones());
+      const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones(), getButtonTombstones());
       await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
       setSyncedSig(dataSignature());
       toast('已上传到 GitHub');
@@ -500,7 +501,8 @@ export function render(container) {
       const evCount = Array.isArray(data.events) ? data.events.length : 0;
       const btnCount = Array.isArray(data.buttons) ? data.buttons.length : 0;
       const tombCount = Array.isArray(data.tombstones) ? data.tombstones.length : 0;
-      if (!evCount && !btnCount && !tombCount) { toast('远程数据无内容'); return; }
+      const btnTombCount = Array.isArray(data.buttonTombstones) ? data.buttonTombstones.length : 0;
+      if (!evCount && !btnCount && !tombCount && !btnTombCount) { toast('远程数据无内容'); return; }
       const ok = await confirmbox({
         title: '下载并导入',
         message: `将导入 ${evCount} 条记录、${btnCount} 个快捷按钮（合并去重，不清空本地数据）。`,
@@ -512,12 +514,12 @@ export function render(container) {
         const r = importEvents(data.events || [], data.tombstones);
         summary += `记录 新增 ${r.added} 条${r.updated ? `，更新 ${r.updated} 条` : ''}${r.skipped ? `，跳过 ${r.skipped}` : ''}`;
       }
-      if (Array.isArray(data.buttons) && data.buttons.length) {
-        const r = importButtons(data.buttons);
+      if ((Array.isArray(data.buttons) && data.buttons.length) || btnTombCount) {
+        const r = importButtons(data.buttons || [], data.buttonTombstones);
         summary += (summary ? '；' : '') + `按钮 新增 ${r.added} 个${r.updated ? `，更新 ${r.updated} 个` : ''}`;
       }
       toast('下载完成：' + summary);
-      setSyncedSig(dataSignature(data.events || [], data.buttons || [], data.tombstones || []));
+      setSyncedSig(dataSignature(data.events || [], data.buttons || [], data.tombstones || [], data.buttonTombstones || []));
       render(container);
     } catch (err) {
       toast('下载失败：' + err.message);

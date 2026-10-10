@@ -1,6 +1,6 @@
 'use strict';
 
-import { getButtons, saveButtons, appendEvent, queryEvents, removeEvent, renameEventName, getEventNodes, recordNode, getOpenSession, abortOpenSession } from '../utils/db.js';
+import { getButtons, saveButtons, appendEvent, queryEvents, removeEvent, renameEventName, getEventNodes, recordNode, getOpenSession, abortOpenSession, removeButtons } from '../utils/db.js';
 import { formatFull, formatGapText, formatHM } from '../utils/time.js';
 import { startOfDay } from '../core/stats.js';
 import { esc, toast, confirmbox, promptbox, actionSheet, nodeDialog, onLongPress, wasLongPress } from '../utils/ui.js';
@@ -154,7 +154,7 @@ const act = await actionSheet(['编辑名称', '补录一笔', '删除按钮']);
   } else if (act === '删除按钮') {
         const ok = await confirmbox({ title: '删除按钮', message: '删除后按钮将从首页移除，历史记录保留。', danger: true });
         if (ok) {
-          saveButtons(getButtons().filter((x) => x.id !== btn.id));
+          removeButtons([btn.id]);
           render(container);
         }
       }

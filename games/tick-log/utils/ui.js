@@ -161,6 +161,10 @@ export function wasLongPress(el) {
  * 列表弹层：每条记录带删除按钮。
  * items: [{ label, ... }]，onDelete(item) 由调用方执行真正删除并刷新视图。
  */
+/**
+ * 列表弹层：每条记录带删除按钮。
+ * items: [{ label, ... }]，onDelete(item) 由调用方执行真正删除；返回真值则关闭弹窗。
+ */
 export function listDialog({ title, items, onDelete }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-mask';
@@ -177,12 +181,13 @@ export function listDialog({ title, items, onDelete }) {
     </div>`;
   document.body.appendChild(overlay);
   const close = () => overlay.remove();
-  overlay.addEventListener('click', (e) => {
+  overlay.addEventListener('click', async (e) => {
     if (e.target === overlay || e.target.closest('[data-close]')) return close();
     const del = e.target.closest('.list-del');
-    if (del) {
-      const item = items[+del.dataset.i];
-      if (item && onDelete) onDelete(item);
-    }
+    if (!del) return;
+    const item = (items || [])[+del.dataset.i];
+    if (!item || !onDelete) return;
+    const changed = await onDelete(item);
+    if (changed) close(); // 删除成功 -> 直接关闭弹窗
   });
 }

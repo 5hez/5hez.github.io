@@ -5,7 +5,7 @@
 // - version.json 始终走网络（版本检测）。
 // 注意：Service Worker 仅在 HTTPS 或 localhost 环境下生效。
 
-const CACHE = 'tick-log-v7';
+const CACHE = 'tick-log-v10';
 
 const ASSETS = [
   './',

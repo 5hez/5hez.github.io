@@ -1,6 +1,6 @@
 'use strict';
 
-import { migrate, getSyncConfig, importEvents, importButtons, queryEvents, getButtons, dataSignature, getTombstones } from './utils/db.js';
+import { migrate, getSyncConfig, importEvents, importButtons, queryEvents, getButtons, dataSignature, getTombstones, getButtonTombstones } from './utils/db.js';
 import { fetchRemoteFile, pushRemoteFile, buildSyncPayload, getSyncedSig, setSyncedSig } from './utils/sync.js';
 import { fetchRemoteVersion, getKnownVersion, setKnownVersion, compareVersion } from './utils/version.js';
 import { confirmbox, toast } from './utils/ui.js';
@@ -61,7 +61,7 @@ async function checkRemoteSync() {
     if (!cfg.token || !cfg.repo) return; // 未配置同步
     const remote = await fetchRemoteFile(cfg);
     if (!remote) return;
-    const remoteSig = dataSignature(remote.events || [], remote.buttons || [], remote.tombstones || []);
+    const remoteSig = dataSignature(remote.events || [], remote.buttons || [], remote.tombstones || [], remote.buttonTombstones || []);
     if (remoteSig === getSyncedSig()) return; // 与已同步版本一致，无新数据
     const ok = await confirmbox({
       title: '云端有新数据',
@@ -75,8 +75,8 @@ async function checkRemoteSync() {
       const r = importEvents(remote.events || [], remote.tombstones);
       summary += `记录 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
     }
-    if (Array.isArray(remote.buttons) && remote.buttons.length) {
-      const r = importButtons(remote.buttons);
+    if ((Array.isArray(remote.buttons) && remote.buttons.length) || (Array.isArray(remote.buttonTombstones) && remote.buttonTombstones.length)) {
+      const r = importButtons(remote.buttons || [], remote.buttonTombstones);
       summary += (summary ? '，' : '') + `按钮 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
     }
     setSyncedSig(remoteSig);
@@ -98,11 +98,12 @@ async function uploadIfChanged() {
     // 先合并远端墓碑，避免把别处已删除的记录又传回去（删除一致性）
     try {
       const remote = await fetchRemoteFile(cfg);
-      if (remote && Array.isArray(remote.tombstones) && remote.tombstones.length) {
-        importEvents([], remote.tombstones);
+      if (remote) {
+        if (Array.isArray(remote.tombstones) && remote.tombstones.length) importEvents([], remote.tombstones);
+        if (Array.isArray(remote.buttonTombstones) && remote.buttonTombstones.length) importButtons([], remote.buttonTombstones);
       }
     } catch (e) { /* 拉不到远端就按本地墓碑上传 */ }
-    const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones());
+    const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones(), getButtonTombstones());
     await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
     setSyncedSig(dataSignature());
   } catch (e) { /* 忽略网络错误 */ } finally {
