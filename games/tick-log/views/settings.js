@@ -3,13 +3,14 @@
 import {
   getButtons, saveButtons, getSettings, saveSettings,
   queryEvents, clearAllEvents, renameEventName, countByName, importEvents, importButtons,
-  getSyncConfig, saveSyncConfig, renameNode, dataSignature
+  getSyncConfig, saveSyncConfig, renameNode, dataSignature, getTombstones
 } from '../utils/db.js';
 import { downloadCSV, downloadJSON, downloadButtonsJSON, downloadBackupJSON } from '../utils/exporter.js';
 import { parseJSONRecords, parseCSVRecords, parseButtonsJSON, parseBackupJSON } from '../utils/import.js';
 import { fetchRemoteFile, pushRemoteFile, buildSyncPayload, setSyncedSig } from '../utils/sync.js';
 import { esc, toast, confirmbox, promptbox, actionSheet } from '../utils/ui.js';
 import { iconSvg, ICON_LIST } from '../utils/icons.js';
+import { getKnownVersion, fetchRemoteVersion, formatVersion } from '../utils/version.js';
 
 const COLORS = [
   '#4cb6ac', '#FF6B6B', '#4D96FF', '#F9C74F', '#9B5DE5', '#00BBF9',
@@ -112,12 +113,18 @@ export function render(container) {
       </div>
 
       <div class="version-info">
-        <p id="app-version">快记小事 v1.2.4</p>
+        <p id="app-version">${esc(formatVersion(getKnownVersion()))}</p>
         <p class="version-tag" id="app-tagline">Designed for mindful logging</p>
       </div>
 
       <div class="privacy-note">所有数据仅保存在本机（localStorage + Service Worker 离线缓存），不上传任何服务器。</div>
     </div>`;
+
+  // 版本号：展示与校验同源（version.json），进入本页时拉一次最新
+  fetchRemoteVersion().then((v) => {
+    const el = container.querySelector('#app-version');
+    if (el && v) el.textContent = formatVersion(v);
+  });
 
   // —— 改图标 ——
   container.querySelectorAll('.btn-icon[data-icon]').forEach((el) => el.addEventListener('click', async () => {
@@ -321,7 +328,7 @@ export function render(container) {
     const records = queryEvents({});
     const btns = getButtons();
     if (!records.length && !btns.length) return toast('暂无数据');
-    downloadBackupJSON(records, btns, 'tick-log-all.json');
+    downloadBackupJSON(records, btns, getTombstones(), 'tick-log-all.json');
     toast('已导出全部数据');
   });
 
@@ -354,8 +361,9 @@ export function render(container) {
         toast('备份文件解析失败');
         return;
       }
-      const { events, buttons } = parsed;
-      if (!events.length && !buttons.length) { toast('未识别到有效数据'); return; }
+      const { events, buttons, tombstones } = parsed;
+      const tc = (tombstones || []).length;
+      if (!events.length && !buttons.length && !tc) { toast('未识别到有效数据'); return; }
       const ok = await confirmbox({
         title: '导入全部数据',
         message: `将导入 ${events.length} 条记录、${buttons.length} 个快捷按钮（合并去重，重复自动跳过）。`,
@@ -363,8 +371,8 @@ export function render(container) {
       });
       if (!ok) return;
       let summary = '';
-      if (events.length) {
-        const r = importEvents(events);
+      if (events.length || tc) {
+        const r = importEvents(events, tombstones);
         summary += `记录 ${r.added} 条${r.skipped ? `，跳过重复 ${r.skipped}` : ''}`;
       }
       if (buttons.length) {
@@ -457,7 +465,7 @@ export function render(container) {
     if (!cfg.token || !cfg.repo) { toast('请先填写并保存 TOKEN 与仓库'); return; }
     setBusy('gh-save-sync', true);
     try {
-      const payload = buildSyncPayload(queryEvents({}), getButtons());
+      const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones());
       await pushRemoteFile({ ...cfg, message: 'tick-log 保存并同步', content: payload });
       setSyncedSig(dataSignature());
       toast('已保存并同步到 GitHub');
@@ -472,7 +480,7 @@ export function render(container) {
     if (!cfg.token || !cfg.repo) { toast('请先填写并保存同步配置'); return; }
     setBusy('gh-upload', true);
     try {
-      const payload = buildSyncPayload(queryEvents({}), getButtons());
+      const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones());
       await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
       setSyncedSig(dataSignature());
       toast('已上传到 GitHub');
@@ -491,7 +499,8 @@ export function render(container) {
       if (!data) { toast('远程暂无同步数据'); return; }
       const evCount = Array.isArray(data.events) ? data.events.length : 0;
       const btnCount = Array.isArray(data.buttons) ? data.buttons.length : 0;
-      if (!evCount && !btnCount) { toast('远程数据无内容'); return; }
+      const tombCount = Array.isArray(data.tombstones) ? data.tombstones.length : 0;
+      if (!evCount && !btnCount && !tombCount) { toast('远程数据无内容'); return; }
       const ok = await confirmbox({
         title: '下载并导入',
         message: `将导入 ${evCount} 条记录、${btnCount} 个快捷按钮（合并去重，不清空本地数据）。`,
@@ -499,8 +508,8 @@ export function render(container) {
       });
       if (!ok) return;
       let summary = '';
-      if (Array.isArray(data.events) && data.events.length) {
-        const r = importEvents(data.events);
+      if ((Array.isArray(data.events) && data.events.length) || tombCount) {
+        const r = importEvents(data.events || [], data.tombstones);
         summary += `记录 新增 ${r.added} 条${r.updated ? `，更新 ${r.updated} 条` : ''}${r.skipped ? `，跳过 ${r.skipped}` : ''}`;
       }
       if (Array.isArray(data.buttons) && data.buttons.length) {
@@ -508,7 +517,7 @@ export function render(container) {
         summary += (summary ? '；' : '') + `按钮 新增 ${r.added} 个${r.updated ? `，更新 ${r.updated} 个` : ''}`;
       }
       toast('下载完成：' + summary);
-      setSyncedSig(dataSignature(data.events || [], data.buttons || []));
+      setSyncedSig(dataSignature(data.events || [], data.buttons || [], data.tombstones || []));
       render(container);
     } catch (err) {
       toast('下载失败：' + err.message);

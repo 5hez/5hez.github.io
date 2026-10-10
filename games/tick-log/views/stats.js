@@ -5,7 +5,7 @@ import * as iv from '../core/interval.js';
 import * as sess from '../core/session.js';
 import { getButtons, getSettings, queryEvents, removeEvent, getEventNodes, querySessions } from '../utils/db.js';
 import { formatFull, formatHM, formatGapText } from '../utils/time.js';
-import { drawBarChart, indexAtX, drawLineChart } from '../utils/canvasChart.js';
+import { drawBarChart, indexAtX, drawLineChart, drawPieChart } from '../utils/canvasChart.js';
 import { esc, listDialog, toast, confirmbox } from '../utils/ui.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -195,6 +195,23 @@ function drawStats(container, state) {
     axisLabels = r.axisLabels;
   }
 
+  // 事件占比（环形饼图）：仅「全部」视图有意义，需 ≥2 个事件
+  const pieData = isAll
+    ? series.map((s) => ({ name: s.name, value: s.counts.reduce((a, b) => a + b, 0), color: s.color }))
+        .filter((d) => d.value > 0)
+        .sort((a, b) => b.value - a.value)
+    : [];
+  const pieTotal = pieData.reduce((a, d) => a + d.value, 0);
+  const pieCard = pieData.length >= 2 ? `
+    <div class="card chart-card">
+      <h3 class="chart-title">事件占比</h3>
+      <p class="chart-lead">${periodLabel(state.range, state.offset)} · 各事件占比</p>
+      <canvas id="pie" class="chart" style="height:200px"></canvas>
+      <div class="legend legend-pie">
+        ${pieData.map((d) => `<span class="lg"><i style="background:${d.color}"></i>${esc(d.name)} ${Math.round((d.value / pieTotal) * 100)}%</span>`).join('')}
+      </div>
+    </div>` : '';
+
   const distCard = isAll ? '' : `
     <div class="card">
       <div class="dist-head" id="dist-toggle">
@@ -217,9 +234,11 @@ function drawStats(container, state) {
       <canvas id="chart" class="chart" style="height:320px"></canvas>
       <div class="chart-tip">点击柱子查看当日明细${isAll ? '（全部事件）' : ''}</div>
     </div>
+    ${pieCard}
     ${distCard}`;
 
   setupChart(container, { series, axisLabels, bucketTs, tickEvery, active: isAll ? null : state.active });
+  setupPie(container, pieData);
   if (!isAll) setupDistList(container, dist);
 }
 
@@ -311,6 +330,19 @@ function setupChart(container, { series, axisLabels, bucketTs, tickEvery, active
       }
     });
   });
+}
+
+function setupPie(container, pieData) {
+  const canvas = container.querySelector('#pie');
+  if (!canvas || !pieData.length) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || container.querySelector('.chart-card').clientWidth - 24;
+  const h = 200;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  drawPieChart(ctx, { width: w, height: h, data: pieData });
 }
 
 function setupDistList(container, dist) {

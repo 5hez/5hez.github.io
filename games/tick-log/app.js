@@ -1,7 +1,8 @@
 'use strict';
 
-import { migrate, getSyncConfig, importEvents, importButtons, queryEvents, getButtons, dataSignature } from './utils/db.js';
+import { migrate, getSyncConfig, importEvents, importButtons, queryEvents, getButtons, dataSignature, getTombstones } from './utils/db.js';
 import { fetchRemoteFile, pushRemoteFile, buildSyncPayload, getSyncedSig, setSyncedSig } from './utils/sync.js';
+import { fetchRemoteVersion, getKnownVersion, setKnownVersion, compareVersion } from './utils/version.js';
 import { confirmbox, toast } from './utils/ui.js';
 import * as home from './views/home.js';
 import * as stats from './views/stats.js';
@@ -60,7 +61,7 @@ async function checkRemoteSync() {
     if (!cfg.token || !cfg.repo) return; // 未配置同步
     const remote = await fetchRemoteFile(cfg);
     if (!remote) return;
-    const remoteSig = dataSignature(remote.events || [], remote.buttons || []);
+    const remoteSig = dataSignature(remote.events || [], remote.buttons || [], remote.tombstones || []);
     if (remoteSig === getSyncedSig()) return; // 与已同步版本一致，无新数据
     const ok = await confirmbox({
       title: '云端有新数据',
@@ -70,8 +71,8 @@ async function checkRemoteSync() {
     });
     if (!ok) return;
     let summary = '';
-    if (Array.isArray(remote.events) && remote.events.length) {
-      const r = importEvents(remote.events);
+    if ((Array.isArray(remote.events) && remote.events.length) || (Array.isArray(remote.tombstones) && remote.tombstones.length)) {
+      const r = importEvents(remote.events || [], remote.tombstones);
       summary += `记录 +${r.added}${r.updated ? `/改${r.updated}` : ''}`;
     }
     if (Array.isArray(remote.buttons) && remote.buttons.length) {
@@ -94,33 +95,37 @@ async function uploadIfChanged() {
     const sig = dataSignature();
     if (sig === getSyncedSig()) return; // 无本地改动
     uploading = true;
-    const payload = buildSyncPayload(queryEvents({}), getButtons());
+    // 先合并远端墓碑，避免把别处已删除的记录又传回去（删除一致性）
+    try {
+      const remote = await fetchRemoteFile(cfg);
+      if (remote && Array.isArray(remote.tombstones) && remote.tombstones.length) {
+        importEvents([], remote.tombstones);
+      }
+    } catch (e) { /* 拉不到远端就按本地墓碑上传 */ }
+    const payload = buildSyncPayload(queryEvents({}), getButtons(), getTombstones());
     await pushRemoteFile({ ...cfg, message: 'tick-log 自动同步', content: payload });
-    setSyncedSig(sig);
+    setSyncedSig(dataSignature());
   } catch (e) { /* 忽略网络错误 */ } finally {
     uploading = false;
   }
 }
 
-/** 版本检测：version.json 与本地记录比较，有新版本弹手动升级提示。 */
+/** 版本检测：version.json 与本地已知版本比较，有新版本弹手动升级提示。 */
 async function checkVersion() {
-  try {
-    const resp = await fetch('./version.json?ts=' + Date.now(), { cache: 'no-store' });
-    if (!resp.ok) return;
-    const remote = Number((await resp.json()).version || 0);
-    const known = Number(localStorage.getItem('app_version') || 0);
-    if (remote <= known) return;
-    if (known === 0) { localStorage.setItem('app_version', String(remote)); return; }
-    const ok = await confirmbox({
-      title: '发现新版本',
-      message: '检测到新版本 v' + remote + '，是否立即更新？（本地数据不受影响）',
-      confirmText: '立即更新',
-      cancelText: '稍后'
-    });
-    localStorage.setItem('app_version', String(remote));
-    if (ok) {
-      if ('caches' in window) { for (const k of await caches.keys()) await caches.delete(k); }
-      location.reload();
-    }
-  } catch (e) { /* 离线或网络异常，忽略 */ }
+  const remote = await fetchRemoteVersion();
+  if (!remote) return; // 离线或取不到版本
+  const known = getKnownVersion();
+  if (compareVersion(remote, known) <= 0) return; // 已是最新
+  if (!known) { setKnownVersion(remote); return; } // 首次：静默记录当前版本
+  const ok = await confirmbox({
+    title: '发现新版本',
+    message: '检测到新版本 v' + remote + '，是否立即更新？（本地数据不受影响）',
+    confirmText: '立即更新',
+    cancelText: '稍后'
+  });
+  setKnownVersion(remote);
+  if (ok) {
+    if ('caches' in window) { for (const k of await caches.keys()) await caches.delete(k); }
+    location.reload();
+  }
 }

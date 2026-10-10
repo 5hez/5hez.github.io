@@ -195,5 +195,45 @@ export function drawLineChart(ctx, opts) {
   }
 }
 
+/**
+ * Canvas 2D 手绘环形饼图（事件占比）。
+ * opts: { width, height, data: [{ name, value, color }] }
+ */
+export function drawPieChart(ctx, opts) {
+  const { width, height, data } = opts || {};
+  const items = (data || []).filter((d) => d && d.value > 0);
+  ctx.clearRect(0, 0, width, height);
+  const total = items.reduce((s, d) => s + d.value, 0);
+  if (!total) return;
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const r = Math.max(10, Math.min(width, height) / 2 - 6);
+  const rIn = r * 0.6; // 环形内径
+  let start = -Math.PI / 2;
+
+  items.forEach((d) => {
+    const end = start + (d.value / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, start, end);
+    ctx.arc(cx, cy, rIn, end, start, true);
+    ctx.closePath();
+    ctx.fillStyle = d.color;
+    ctx.fill();
+    start = end;
+  });
+
+  // 中心总数
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2b2b2b';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.fillText(String(total), cx, cy - 8);
+  ctx.fillStyle = '#999';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('总次数', cx, cy + 14);
+  ctx.textBaseline = 'alphabetic';
+}
+
 export const CHART_PAD_L = PAD_L;
 export const CHART_PAD_R = PAD_R;

@@ -114,10 +114,23 @@ export function parseButtonsJSON(text) {
     .filter(Boolean);
 }
 
-/** 解析统一备份：{ events, buttons }，复用记录/按钮各自的解析逻辑。 */
+/** 解析墓碑：{ tombstones: [...] } 或纯数组。 */
+export function parseTombstones(text) {
+  const data = JSON.parse(text);
+  const list = Array.isArray(data) ? data : (Array.isArray(data.tombstones) ? data.tombstones : []);
+  return list
+    .map((t) => {
+      if (!t || !t.id) return null;
+      return { id: String(t.id), deletedAt: Number(t.deletedAt) || 0 };
+    })
+    .filter(Boolean);
+}
+
+/** 解析统一备份：{ events, buttons, tombstones }，复用各自的解析逻辑。 */
 export function parseBackupJSON(text) {
   return {
     events: parseJSONRecords(text),
-    buttons: parseButtonsJSON(text)
+    buttons: parseButtonsJSON(text),
+    tombstones: parseTombstones(text)
   };
 }

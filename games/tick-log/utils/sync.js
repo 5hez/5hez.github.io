@@ -78,8 +78,8 @@ export async function pushRemoteFile({ token, repo, path, message, content }) {
 }
 
 /** 组装云端数据包（复用本地导出结构）。 */
-export function buildSyncPayload(events, buttons) {
-  return toBackupJSON(events, buttons);
+export function buildSyncPayload(events, buttons, tombstones) {
+  return toBackupJSON(events, buttons, tombstones);
 }
 
 /** 本机已同步到的数据签名（用于判断本地是否有改动 / 远端是否有更新）。 */

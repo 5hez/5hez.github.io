@@ -2,12 +2,14 @@
 
 import { get, set, remove, keys, estimateBytes } from './storage.js';
 import { findOpenSession, sessionize } from '../core/session.js';
+import { mergeTombstones, tombstoneIds } from '../core/merge.js';
 
 const META_KEY = 'meta';
 const BUTTONS_KEY = 'buttons';
 const SETTINGS_KEY = 'settings';
 const SYNC_KEY = 'gh_sync';
 const EVT_PREFIX = 'events_';
+const TOMB_KEY = 'tombstones';
 const ONE_MB = 1024 * 1024;
 
 export function getSyncConfig() {
@@ -128,11 +130,46 @@ export function removeEvent(id) {
       removed = true;
     }
   });
+  if (removed) addTombstones([id]);
   return removed;
 }
 
 export function clearAllEvents() {
+  const ids = [];
+  listYearKeys().forEach((key) => get(key, []).forEach((e) => { if (e.id) ids.push(e.id); }));
   listYearKeys().forEach((key) => remove(key));
+  addTombstones(ids);
+}
+
+// ---------------- tombstones（删除墓碑：让删除也能同步、不复活） ----------------
+
+export function getTombstones() {
+  return get(TOMB_KEY, []);
+}
+
+export function saveTombstones(list) {
+  set(TOMB_KEY, list);
+}
+
+/** 为若干记录 id 写墓碑（删除的持久化表示）。 */
+export function addTombstones(ids) {
+  const list = (ids || []).filter(Boolean);
+  if (!list.length) return;
+  const now = Date.now();
+  saveTombstones(mergeTombstones(getTombstones(), list.map((id) => ({ id, deletedAt: now }))));
+}
+
+/** 按本地墓碑删掉各年记录（应用远端墓碑）。返回移除条数。 */
+function applyLocalTombstones() {
+  const dead = tombstoneIds(getTombstones());
+  if (!dead.size) return 0;
+  let removed = 0;
+  listYearKeys().forEach((key) => {
+    const arr = get(key, []);
+    const next = arr.filter((e) => !dead.has(e.id));
+    if (next.length !== arr.length) { set(key, next); removed += arr.length - next.length; }
+  });
+  return removed;
 }
 
 /**
@@ -177,8 +214,15 @@ function eventSig(e) {
  * - 其余为新增。
  * 返回 { added, updated, skipped }。
  */
-export function importEvents(list) {
-  const all = queryEvents({});
+export function importEvents(list, tombstones) {
+  // 先合并远端墓碑并应用（删掉本地已墓碑的记录）
+  if (Array.isArray(tombstones) && tombstones.length) {
+    saveTombstones(mergeTombstones(getTombstones(), tombstones));
+    applyLocalTombstones();
+  }
+  const dead = tombstoneIds(getTombstones());
+
+  const all = queryEvents({}).filter((e) => !dead.has(e.id));
   const byId = new Map(all.map((e) => [e.id, e]));
   const sigs = new Set(all.map(eventSig));
   let added = 0;
@@ -188,6 +232,7 @@ export function importEvents(list) {
   (list || []).forEach((e) => {
     if (!e || typeof e.ts !== 'number' || !e.name) { skipped++; return; }
     const id = e.id || uid();
+    if (dead.has(id)) { skipped++; return; } // 已删除：不再导入
     const existing = byId.get(id);
     if (existing) {
       // 同 id：协调改名/改色（合并传播），内容相同则跳过
@@ -402,14 +447,17 @@ export function renameNode(eventName, oldNode, newNode) {
 export function removeSession(sessionId) {
   if (!sessionId) return 0;
   let removed = 0;
+  const ids = [];
   listYearKeys().forEach((key) => {
     const arr = get(key, []);
     const next = arr.filter((e) => e.sessionId !== sessionId);
     if (next.length !== arr.length) {
+      arr.forEach((e) => { if (e.sessionId === sessionId && e.id) ids.push(e.id); });
       set(key, next);
       removed += arr.length - next.length;
     }
   });
+  if (ids.length) addTombstones(ids);
   return removed;
 }
 
@@ -417,13 +465,16 @@ export function removeSession(sessionId) {
  * 数据签名：事件 + 按钮的规范化指纹，用于判断本地/远端数据是否一致。
  * 传入 events/buttons 可对指定数据计算（例如比对远端数据）。
  */
-export function dataSignature(events, buttons) {
+export function dataSignature(events, buttons, tombstones) {
   const evs = (events || queryEvents({}))
     .map((x) => [x.name, x.ts, x.node || '', x.sessionId || '', x.color || ''].join('|'));
   evs.sort();
   const bts = (buttons || getButtons())
     .map((x) => [x.name, x.icon || '', x.color || '', x.enabled ? '1' : '0'].join('|'));
-  const s = evs.join('\n') + '##' + bts.join('\n');
+  const tbs = (tombstones || getTombstones())
+    .map((t) => t.id + ':' + (t.deletedAt || 0));
+  tbs.sort();
+  const s = evs.join('\n') + '##' + bts.join('\n') + '##' + tbs.join('\n');
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);

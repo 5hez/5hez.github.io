@@ -1093,4 +1093,5 @@ button {
   border-radius: 16px;
   /* 注意：不要用 transform —— SortableJS 用 transform: translate3d 移动克隆体 */
 }
+.legend-pie { justify-content: center; margin-top: 10px; }
 .group-open { color: var(--primary); }

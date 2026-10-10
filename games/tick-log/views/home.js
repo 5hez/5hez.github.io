@@ -8,6 +8,9 @@ import { iconSvg } from '../utils/icons.js';
 
 let editing = false;
 let sortable = null; // SortableJS 实例（编辑模式拖拽排序）
+const lastClick = {}; // 各按钮上次点击时间（防连点）
+const CLICK_DEBOUNCE_MS = 600;
+const DUP_WINDOW_MS = 10 * 60 * 1000; // 同一事件重复记录提醒阈值：10 分钟
 
 export function render(container) {
   if (sortable) { try { sortable.destroy(); } catch (e) {} sortable = null; }
@@ -106,9 +109,14 @@ export function render(container) {
     if (wasLongPress(cell)) return;
     const btn = getButtons().find((b) => b.id === cell.dataset.id && b.enabled);
     if (!btn) return;
+    // 防抖：同一按钮短时间内的连点（误触）直接忽略
+    const now = Date.now();
+    if (now - (lastClick[btn.id] || 0) < CLICK_DEBOUNCE_MS) return;
+    lastClick[btn.id] = now;
     const nodes = getEventNodes(btn.name);
     if (!nodes) {
-      // 瞬时事件：现状，直接记录
+      // 瞬时事件：同事件 10 分钟内重复 → 先提示确认
+      if (!(await confirmDuplicate(btn.name))) return;
       appendEvent({ name: btn.name, color: btn.color });
       toast('已记录：' + btn.name);
       render(container);
@@ -175,6 +183,24 @@ const act = await actionSheet(['编辑名称', '补录一笔', '删除按钮']);
         render(container);
       }
     });
+  });
+}
+
+/** 同一事件最近一条记录若在 10 分钟内，弹确认框。返回 true 表示可继续记录。 */
+async function confirmDuplicate(name) {
+  const recs = queryEvents({ name });
+  if (!recs.length) return true;
+  const last = recs.reduce((m, r) => Math.max(m, r.ts || 0), 0);
+  const gap = Date.now() - last;
+  if (gap >= DUP_WINDOW_MS) return true;
+  const mins = Math.floor(gap / 60000);
+  return confirmbox({
+    title: '重复记录提醒',
+    message: mins < 1
+      ? `「${name}」刚刚记录过（1 分钟内），确认要再记一条吗？`
+      : `「${name}」${mins} 分钟前刚记录过，确认要再记一条吗？`,
+    confirmText: '仍然添加',
+    cancelText: '不添加'
   });
 }
 
